@@ -35,16 +35,19 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-from strata_control import user_args
+from strata_control import layout, user_args
 from strata_control import atomic as _atomic_mod
 
 SCHEMA_VERSION = 1
+_SKIP_SCAN_DIRS = frozenset({".git", ".venv", ".rocm-win", "node_modules", "__pycache__"})
+_MAX_CONFIG_BYTES = 1024 * 1024
 
 
 class ApplyError(RuntimeError):
@@ -95,23 +98,95 @@ def args_to_argv(args: dict[str, Any]) -> list[str]:
     return out
 
 
-def find_config_files(root: Path, *, limit: int = 200) -> list[Path]:
-    """Every `strata-*.json` run configuration under `root`.
+def _read_bounded_json(path: Path) -> Any:
+    if stat.S_ISLNK(path.lstat().st_mode):
+        raise ValueError("symlink config is not allowed")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    with os.fdopen(descriptor, "rb") as stream:
+        details = os.fstat(stream.fileno())
+        if not stat.S_ISREG(details.st_mode) or details.st_size > _MAX_CONFIG_BYTES:
+            raise ValueError("config exceeds 1 MiB or is not a regular file")
+        raw = stream.read(_MAX_CONFIG_BYTES + 1)
+    if len(raw) > _MAX_CONFIG_BYTES:
+        raise ValueError("config exceeds 1 MiB")
+    return json.loads(raw.decode("utf-8-sig"))
 
-    The project keeps one configuration per installed model, and the naming is the project's own
-    (`strata-<model>.json`, as `setup.py` writes them). Anything that does not parse as a JSON object
-    with an `args` list is not a run configuration and is ignored rather than guessed at.
+
+def _is_tune_config(path: Path) -> bool:
+    try:
+        data = _read_bounded_json(path)
+    except (OSError, UnicodeError, ValueError):
+        return False
+    return isinstance(data, dict) and isinstance(data.get("args"), list)
+
+
+def find_config_files(root: Path, *, limit: int = 200) -> list[Path]:
+    """Every ``strata-*.json`` run configuration under ``root``.
+
+    Excludes ``*.shared-settings.json`` and symlinks, avoids descending into tool/VCS caches,
+    and prefers ``<dir>/configs/strata-*.json`` over legacy ``<dir>/strata-*.json`` without duplicates.
     """
+    base = Path(root)
+    if limit <= 0 or not base.is_dir() or base.is_symlink():
+        return []
     out: list[Path] = []
-    for path in sorted(Path(root).rglob("strata-*.json")):
+    seen_dirs: set[str] = set()
+
+    def scan_dir(d: Path) -> None:
         if len(out) >= limit:
-            break
+            return
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if isinstance(data, dict) and isinstance(data.get("args"), list):
-            out.append(path)
+            real_key = os.path.normcase(str(d.resolve()))
+        except OSError:
+            real_key = os.path.normcase(str(d))
+        if real_key in seen_dirs:
+            return
+        seen_dirs.add(real_key)
+        try:
+            entries = sorted(d.iterdir(), key=lambda p: p.name.lower())
+        except OSError:
+            return
+        shadowed: set[str] = set()
+        cfg_sub = layout.configs_dir(d)
+        try:
+            has_cfg_sub = cfg_sub.is_dir() and not cfg_sub.is_symlink()
+        except OSError:
+            has_cfg_sub = False
+        if has_cfg_sub:
+            try:
+                for p in cfg_sub.iterdir():
+                    try:
+                        if layout.is_config_file(p) and (p.is_symlink() or not p.is_dir()):
+                            shadowed.add(p.name.lower())
+                    except OSError:
+                        continue
+            except OSError:
+                pass
+            scan_dir(cfg_sub)
+            if len(out) >= limit:
+                return
+        subdirs: list[Path] = []
+        for p in entries:
+            if layout.is_config_file(p):
+                if p.name.lower() in shadowed:
+                    continue
+                if _is_tune_config(p):
+                    out.append(p)
+                    if len(out) >= limit:
+                        return
+            else:
+                try:
+                    if p.is_dir() and not p.is_symlink() and p.name not in _SKIP_SCAN_DIRS:
+                        subdirs.append(p)
+                except OSError:
+                    continue
+        for sub in subdirs:
+            if len(out) >= limit:
+                return
+            scan_dir(sub)
+
+    scan_dir(base)
     return out
 
 
@@ -251,7 +326,10 @@ def review_apply(*, job: dict[str, Any], config_path: Path,
         return ApplyPlan(job_id, config_path, [], [], [], [], "", "", "", reasons)
 
     source = config_path.read_bytes()
-    before = json.loads(source.decode("utf-8"))
+    if len(source) > _MAX_CONFIG_BYTES:
+        reasons.append(f"run configuration exceeds 1 MiB at {config_path}")
+        return ApplyPlan(job_id, config_path, [], [], [], [], "", "", "", reasons)
+    before = json.loads(source.decode("utf-8-sig"))
     before_args = [str(x) for x in (before.get("args") or [])]
 
     rec = report.get("recommendation") or {}
@@ -319,7 +397,10 @@ def apply_recommendation(*, job: dict[str, Any], config_path: Path,
     if not plan.applicable:
         raise ApplyError("; ".join(plan.reasons))
 
-    before = json.loads(config_path.read_text(encoding="utf-8"))
+    before_raw = config_path.read_bytes()
+    if len(before_raw) > _MAX_CONFIG_BYTES:
+        raise ApplyError(f"run configuration exceeds 1 MiB at {config_path}")
+    before = json.loads(before_raw.decode("utf-8-sig"))
     candidate = apply_args_to_config(before, args_to_argv(
         (job.get("report") or {}).get("recommendation", {}).get("args") or {}))
 
@@ -380,7 +461,10 @@ def rollback(*, application_id: str, state_dir: Path) -> dict[str, Any]:
     record_path = directory / "application.json"
     if not record_path.exists():
         raise ApplyError(f"no application record at {record_path}", 404)
-    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record_raw = record_path.read_bytes()
+    if len(record_raw) > _MAX_CONFIG_BYTES:
+        raise ApplyError(f"application record exceeds 1 MiB at {record_path}")
+    record = json.loads(record_raw.decode("utf-8-sig"))
     if record.get("rolled_back"):
         raise ApplyError("this application has already been rolled back")
     before = directory / "before.json"

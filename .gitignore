@@ -49,6 +49,11 @@ td.log
 /strata-*.log
 /terminal/strata-*.warm-start
 /terminal/strata-*.warm-start-*.bin
+/terminal/configs/
+/configs/
+/terminal/logs/
+/terminal/scripts/
+/scripts/
 /terminal/build-strata.bat
 /build-strata.bat
 /terminal/build-strata-cuda12.bat

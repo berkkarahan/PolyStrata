@@ -64,8 +64,8 @@ class SwiftPleShardPaths(unittest.TestCase):
                     mock.patch.object(adopt, "intel_driver", return_value="xe"):
                 out_path = r.adopt_prepared_files("", chosen=True)
 
-            self.assertEqual(out_path, installed_json)
-            cfg = json.loads(installed_json.read_text(encoding="utf-8"))
+            self.assertEqual(out_path, install_root / "configs" / "strata-swift-iq3_xxs.json")
+            cfg = json.loads(out_path.read_text(encoding="utf-8"))
             args = cfg["args"]
             self.assertEqual(args[args.index("--native") + 1], str(s1))
             self.assertEqual(args[args.index("--ple-gguf") + 1], str(s1))

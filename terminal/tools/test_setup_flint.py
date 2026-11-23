@@ -51,7 +51,7 @@ class Main(unittest.TestCase):
                 self.downloads, self.runs, self.verified = [], [], []
                 code, out, _ = self.main(family="flint", model=size, ram=64.0, vram=8188 / 1024)
                 self.assertEqual(code, 0, out)
-                cfg = json.loads((self.t / f"strata-flint-{size.lower()}.json").read_text())   # one config a size
+                cfg = json.loads((self.t / "configs" / f"strata-flint-{size.lower()}.json").read_text())   # one config a size
                 file = f"flint-{size}.gguf"
                 self.assertEqual(self.downloads, [FAM["hf"] + file])
                 self.assertEqual(self.verified, [(file, *FAM["sha256"][file])])
@@ -78,7 +78,7 @@ class Main(unittest.TestCase):
                 self.setUp()
                 code, out, _ = self.main(family="flint", ram=ram, vram=vram)
                 self.assertEqual(code, 0, out)
-                self.assertTrue((self.t / f"strata-flint-{size.lower()}.json").is_file(), out)
+                self.assertTrue((self.t / "configs" / f"strata-flint-{size.lower()}.json").is_file(), out)
 
     def test_the_contexts_show_its_own_laptop_speed(self):
         # UD-Q3_K_XL on the 8 GB laptop after prompts of 29K, 63K and 126K tokens

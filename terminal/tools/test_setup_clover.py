@@ -70,7 +70,7 @@ class Main(unittest.TestCase):
                 self.downloads, self.runs, self.verified = [], [], []
                 code, out, _ = self.main(family="clover", model=size, ram=64.0, vram=8188 / 1024)
                 self.assertEqual(code, 0, out)
-                cfg = json.loads((self.t / f"strata-clover-{size.lower()}.json").read_text())   # one config a size
+                cfg = json.loads((self.t / "configs" / f"strata-clover-{size.lower()}.json").read_text())   # one config a size
                 tag = "clover-" + size
                 pack = self.t / "data" / "packs" / tag.lower()
                 # the mocked tokenizer writes no template, so each size takes the model's own
@@ -103,7 +103,7 @@ class Main(unittest.TestCase):
             with self.subTest(ram=ram):
                 code, out, _ = self.main(family="clover", ram=ram, vram=8.0)
                 self.assertEqual(code, 0, out)
-                self.assertTrue((self.t / f"strata-clover-{size.lower()}.json").is_file(), out)
+                self.assertTrue((self.t / "configs" / f"strata-clover-{size.lower()}.json").is_file(), out)
 
     def test_vision_is_not_used(self):
         code, out, cfg = self.main(["--vision", "yes"], family="clover", ram=32.0, vram=8.0)

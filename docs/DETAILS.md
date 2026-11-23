@@ -18,7 +18,7 @@ New here? Start with the [README](../README.md). Installing is in [INSTALL.md](I
 > [History](#history--older-measurements)
 
 **Which flags go where.** Setup's own flags go on the `START-HERE.bat` or `./setup.sh` line (`--help` lists them). The
-engine and server flags below go in the `"args"` list of `strata-<model>.json` (setup writes it, in the `terminal` folder) or
+engine and server flags below go in the `"args"` list of `terminal/configs/strata-<model>.json` (setup writes it) or
 on the `terminal/serve/server.py` command line.
 
 ## Quick start
@@ -143,7 +143,7 @@ START-HERE.bat --gpu 1                          another GPU, numbered as nvidia-
 START-HERE.bat --calibrate                      tune the engine for this PC (about 15-30 minutes, longer on a slow card), then start
 ```
 
-With more than one model installed, it asks which one to start; `terminal\run-<model>.bat` starts one directly. The
+With more than one model installed, it asks which one to start; `terminal\scripts\run-<model>.bat`, `python terminal/polystrata.py start <name>` or `terminal\strata.py run <model>` starts one directly. The
 model files (70-120 GB) go to a `PolyStrata-data` folder next to the PolyStrata folder, and setup remembers that place
 for every PolyStrata folder on the PC (`%APPDATA%\PolyStrata\settings.json`; `~/.config/polystrata/settings.json` on
 Linux). Every option: [INSTALL.md](INSTALL.md#options-without-questions).
@@ -203,8 +203,8 @@ large pages were refused. `terminal\tools\windows\enable_large_pages.ps1` (run a
 ```
 
 Setup offers choices for the detected machine and can install missing Debian or Ubuntu dependencies with `sudo apt`.
-It starts the server on `http://127.0.0.1:8080` unless you configure another address or port. Later runs of `./setup.sh`
-or `terminal/run-<model>.sh` start the model directly. The options are the same as on Windows (`./setup.sh --setup`,
+It starts the server on `http://127.0.0.1:8080` unless you configure another address or port. Later runs of `./setup.sh`,
+`terminal/scripts/run-<model>.sh` or `python terminal/polystrata.py start <name>` start the model directly. The options are the same as on Windows (`./setup.sh --setup`,
 `--model Q2_0 --yes`, `--gguf-dir /data/Q2_0`). Terminal chat: `terminal/.venv/bin/python terminal/tools/chat.py`. Building from git and trying a pull
 request: [SOURCE_INSTALL.md](SOURCE_INSTALL.md#build-from-git-on-linux-to-try-a-pull-request-or-change-the-code).
 
@@ -554,7 +554,7 @@ All are optional. Setup rewrites the config when run again and keeps keys it doe
 card edits some of them (the sampling defaults, `reasoning_budget_tokens`, `fit_max_tokens`, `drop_oldest`,
 `truncate_middle`, `preserve_thinking`, `anthropic_thinking`, `effort_position`, `aliases`, `idle_unload_s`, `mtp`,
 `lazy_load`, `engine_silence_s`, `api_monitor`, `switch_on_request`, `open_browser` and `--vram-reserve-mib`). An empty
-field removes the key, the earlier file is kept as `strata-<model>.json.bak`, and the change applies at the next start, or
+field removes the key, the earlier file is kept beside it as `strata-<model>.json.bak` in `terminal/configs/`, and the change applies at the next start, or
 at the next switch to that model. Only PolyStrata's own page can save (JSON, with the API key when one is set). Network,
 key, MCP and program keys are not editable there.
 
@@ -907,7 +907,7 @@ tables per token). The scaling is fixed for the whole run, because the KV cache 
 - **Codex CLI:** [below](#the-responses-api-and-codex-cli).
 - **Switching models on request (#38, opt-in).** `"switch_on_request": true` in the `strata-<model>.json` the server
   starts with (or `--switch-on-request`) makes the API work like llama-server's router: `/v1/models` lists every
-  installed model that can run (each `strata-<model>.json` beside that config, with its aliases; status `loaded`,
+  installed model that can run (each `strata-<model>.json` in `terminal/configs/` or the legacy `terminal/` root, with its aliases; status `loaded`,
   `unloaded` or `loading`), and a request that names another one loads it: the loaded model is stopped first (one
   model is in memory at a time), then the named one starts with its own settings (Switching models in the web page,
   below). The name must be a model's name, one of its aliases or its config file's name, whole
@@ -1737,7 +1737,7 @@ both and of neither were the same 128 tokens at 32K and parted at token 85 at 10
 | `no progress for 60 s ... reading the prompt` on Linux with `threads waiting on the disk (state D)` in the stall report | The engine waits for the drive: the n-gram table is read at random (`--ple-io direct`), which a rotational disk cannot keep up with. `--ple-io ram` (needs RAM for the table) or the model on an SSD fixes it. Setup adds `--ple-io ram` itself on a rotational disk when the RAM holds the table. |
 | `the engine said nothing for ... s during the request` | The engine and the server lost step. The server ends the engine after `engine_silence_s` (300 by default), the request ends with an error and the next request starts the engine again. If it repeats, add the end of the engine log to issue #481. |
 | `the engine said nothing for ... s and used no CPU or disk in that time (frozen ...)` | A quicker version of the check above for an engine that stopped, not slowed: after 90 s the server ends it. `STRATA_ENGINE_STALL_S=180` sets the time, `0` turns it off (needs `psutil`, which setup installs). |
-| Anything else | The engine log is `strata-<model>.log` in the `terminal` folder. [TROUBLESHOOTING.md](TROUBLESHOOTING.md) has the rest. |
+| Anything else | The engine log is `terminal/logs/strata-<model>.log` (or `terminal/strata-<model>.log` in older unmigrated installs). [TROUBLESHOOTING.md](TROUBLESHOOTING.md) has the rest. |
 
 ---
 

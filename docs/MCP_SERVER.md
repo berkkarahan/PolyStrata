@@ -149,12 +149,10 @@ Everything setup has finished is skipped on the next run, and downloads resume. 
 keeps running. The install is refused while a model this server started is running, because setup may replace the
 engine files that model uses.
 
-**Start.** `strata_start` runs the same command as the `run-<model>` script, `serve/server.py --engine strata
---config strata-<model>.json --port N`, with the venv's Python, without `--open` (no browser) and without a console
-window. The server's output goes to `.strata-mcp/server.log`. The tool then polls `GET /health` until the model
-answers. Loading takes 1-3 minutes. If the server ends while loading, the tool returns the end of its log. The model
-keeps running after the AI app closes, until `strata_stop`. If the AI app runs its tools inside a Windows job that
-does not allow processes to leave it, the model ends together with the app.
+**Start.** `strata_start` runs the same command as the `scripts/run-<model>` script, `serve/server.py --engine strata
+--config configs/strata-<model>.json --port N` (or legacy top-level `strata-<model>.json` when unmigrated), with the
+venv's Python, without `--open` (no browser) and without a console window. The server's output goes to
+`.strata-mcp/server.log` (and the engine log goes to `logs/strata-<model>.log`). The tool then polls `GET /health` until the model answers. Loading takes 1-3 minutes. If the server ends while loading, the tool returns the end of its log. The model keeps running after the AI app closes, until `strata_stop`. If the AI app runs its tools inside a Windows job that does not allow processes to leave it, the model ends together with the app.
 
 Two cases are refused:
 

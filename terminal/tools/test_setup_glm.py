@@ -311,7 +311,7 @@ class Main(unittest.TestCase):
             for p in patches:
                 st.enter_context(p)
             code, out = quiet(setup.main)
-        cfg = next(iter(sorted(self.t.glob(f"strata-{setup.FAMILIES[family]['tag']}*.json"))), None)
+        cfg = next(iter(sorted((self.t / "configs").glob(f"strata-{setup.FAMILIES[family]['tag']}*.json"))), None)
         return code, out, (json.loads(cfg.read_text()) if cfg else None)
 
     def test_install(self):
@@ -499,7 +499,7 @@ class Main(unittest.TestCase):
         self.assertIn("with CUDA 12 is compiled here", out)
         self.assertEqual(cfg["cuda"], 12)
         # a copy set up from this install keeps it; the same one set up again chooses again
-        self.assertEqual(setup.choices_from_config(next(self.t.glob("strata-glm*.json")))["cuda"], 12)
+        self.assertEqual(setup.choices_from_config(next((self.t / "configs").glob("strata-glm*.json")))["cuda"], 12)
         code, out, cfg = self.main()
         self.assertEqual((cfg.get("cuda"), self.toolkit), (None, 13))
 

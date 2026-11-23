@@ -27,6 +27,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from strata_control import layout
 from strata_control.paths import APP_NAME, XDG_NAME
 
 # What setup still has to fetch for an installed model whose helper files are gone (setup.py: tools/mtp_fetch.py reads the 31 MTP tensors of
@@ -137,22 +138,15 @@ def own_settings_file(environ=None, *, windows: bool | None = None, home: Path |
 
 
 def has_configs(directory: Path) -> bool:
-    try:
-        return directory.is_dir() and any(_is_config(p) for p in directory.iterdir())
-    except OSError:
-        return False
+    return bool(layout.iter_config_files(directory))
 
 
 def _is_config(path: Path) -> bool:
-    n = path.name
-    return n.startswith("strata-") and n.endswith(".json") and not n.endswith(".shared-settings.json") and len(n) > len("strata-.json")
+    return layout.is_config_file(path)
 
 
 def config_files(directory: Path) -> list[Path]:
-    try:
-        return sorted(p for p in directory.iterdir() if _is_config(p))
-    except OSError:
-        return []
+    return layout.iter_config_files(directory)
 
 
 @dataclass

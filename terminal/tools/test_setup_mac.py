@@ -259,7 +259,11 @@ class V31Sets(unittest.TestCase):
 
 class HandOver(unittest.TestCase):
     def test_darwin_hands_the_run_to_setup_mac(self):
-        with mock.patch.object(setup.sys, "platform", "darwin"), \
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(setup, "ROOT", Path(d)), \
+                mock.patch.object(setup, "_CONTROL_HOME", None), \
+                mock.patch.object(setup, "move_over_old_layout", return_value=[]), \
+                mock.patch.object(setup.sys, "platform", "darwin"), \
                 mock.patch.object(setup.subprocess, "call", return_value=0) as call, \
                 mock.patch.object(setup.sys, "argv", ["setup.py", "--model", "Q2_0", "--yes"]):
             self.assertEqual(setup.main(), 0)
@@ -270,7 +274,11 @@ class HandOver(unittest.TestCase):
     def test_other_platforms_never_reach_it(self):
         src = (ROOT / "setup.py").read_text(encoding="utf-8")
         self.assertIn('if sys.platform == "darwin":', src)
-        with mock.patch.object(setup, "mac_setup", side_effect=AssertionError("called")), \
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(setup, "ROOT", Path(d)), \
+                mock.patch.object(setup, "_CONTROL_HOME", None), \
+                mock.patch.object(setup, "move_over_old_layout", return_value=[]), \
+                mock.patch.object(setup, "mac_setup", side_effect=AssertionError("called")), \
                 mock.patch.object(setup.sys, "platform", "linux"), \
                 mock.patch.object(setup.sys, "argv", ["setup.py", "--inspect", "x"]), \
                 mock.patch.object(setup.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)):
@@ -421,7 +429,7 @@ class ControlMode(unittest.TestCase):
 
     def config(self, tag="q2_0"):
         import json
-        return json.loads((self.home / f"strata-{tag}.json").read_text(encoding="utf-8"))
+        return json.loads((self.home / "configs" / f"strata-{tag}.json").read_text(encoding="utf-8"))
 
     def test_the_install_writes_a_run_config_for_the_engine_component(self):
         rc, ran = self.run_setup()
@@ -470,7 +478,7 @@ class ControlMode(unittest.TestCase):
             for name in (cfg["model_name"], "feedfam-q4_k_m"):    # the feed model's own name as well
                 d = drafting.apply(dict(cfg, model_name=name), data_dir=self.data, backend="metal", archs=[])
                 self.assertEqual((d.drafter, drafting.summary_line(d)), ("off", "Drafting: Off"), (hw, name))
-        (self.home / "strata-q2_0.json").unlink()                 # (a fresh install: nothing carried over from the runs above)
+        (self.home / "configs" / "strata-q2_0.json").unlink()                 # (a fresh install: nothing carried over from the runs above)
         rc, _ = self.run_setup(hw=M5)                             # the Flash-Next size keeps its drafter: neither key is written
         cfg = self.config()
         self.assertNotIn("drafting", cfg)
@@ -814,14 +822,15 @@ class SmallerModelSetup(unittest.TestCase):
                 self.assertEqual(cfg["backend"], "metal")
                 saved = write.call_args.args[0]
                 import json
+                saved.parent.mkdir(parents=True, exist_ok=True)
                 saved.write_text(json.dumps(cfg))
                 choice = setup.choices_from_config(saved)
                 self.assertEqual((choice["family"], choice["model"]), (family, model))
-                # in setup.home() (terminal/), where the server, `polystrata.py --list-models` / --model and the next ./setup.sh
-                # find it: not beside setup_mac.py in engine/; its log beside it
+                # in setup.home()/configs (under terminal/), where the server, `polystrata.py --list-models` / --model and the next ./setup.sh
+                # find it: not beside setup_mac.py in engine/; its log in logs/
                 from serve import models as registry
-                self.assertEqual(saved.parent, setup.home())
-                self.assertEqual(Path(cfg["log"]).parent, setup.home())
+                self.assertEqual(saved.parent, setup.home() / "configs")
+                self.assertEqual(Path(cfg["log"]).parent, setup.home() / "logs")
                 self.assertEqual(registry.find(registry.discover(setup.home()), cfg["model_name"])["config"], str(saved))
                 self.assertEqual(Path(cfg["exe"]).name, "strata-poly")
                 self.assertEqual(cfg["parallel"], 1 if fam.get("one_request") else 3)
@@ -971,7 +980,7 @@ class FullCatalog(unittest.TestCase):
                     write=patch(setup,"write_config");patch(setup,"write_run_script",return_value=root/"run.sh")
                     self.assertEqual(M.main(["--family",family,"--model",model,"--context","4096","--gguf-dir",tmp,
                                              "--no-download-models","--no-start","--yes","--vision","no","--parallel","2"]),0)
-                    path,cfg=write.call_args.args;path.write_text(json.dumps(cfg));choice=setup.choices_from_config(path)
+                    path,cfg=write.call_args.args;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(json.dumps(cfg));choice=setup.choices_from_config(path)
                     self.assertEqual((choice["family"],choice["model"]),(family,model))
                     self.assertEqual(cfg["parallel"],2)
                     args=cfg["args"]
@@ -1021,6 +1030,7 @@ class FullCatalog(unittest.TestCase):
                 self.assertEqual(cfg["parallel"],2)
                 self.assertEqual(cfg["args"][cfg["args"].index("--native")+1],str(gguf))
                 self.assertEqual(cfg["args"][cfg["args"].index("--mtp")+1],"2")
+                path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps(cfg))
                 choice=setup.choices_from_config(path)
                 self.assertEqual((choice["family"],choice["model"]),(a.family,model))

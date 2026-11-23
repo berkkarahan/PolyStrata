@@ -61,7 +61,7 @@
     "cwd": "<REPO>",
     "tokenizer": "<ROOT>/data/packs/iq3_s/tokenizer",
     "model_name": "qwen3.8-flash-next-iq3_s",
-    "log": "<REPO>/strata-iq3_s.log",
+    "log": "<REPO>/logs/strata-iq3_s.log",
     "lib_dirs": [],
     "port": 8080,
     "vision": {

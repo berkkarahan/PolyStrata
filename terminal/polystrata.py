@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""PolyStrata from a terminal: which models are installed, a chat with one of them, and a benchmark.
+"""PolyStrata from a terminal: which models are installed, starting the server, a chat, and a benchmark.
 
     python polystrata.py --list-models
+    python polystrata.py start <name>                 start the server for that model in this terminal
     python polystrata.py --model <name>                chat with it; /model in the chat changes it
     python polystrata.py benchmark --model <name>      speeds, memory and cache figures, as a table and as JSON
 
-A model is one that setup installed (its run config, strata-<name>.json, is beside this file).  One model is in
-memory at a time.  With a server already running on the port, --model switches that server to the model; without
-one, a server is started here and stopped when the chat or the benchmark ends.
+A model is one that setup installed (its run config, configs/strata-<name>.json or legacy strata-<name>.json,
+is under this folder). One model is in memory at a time. With a server already running on the port, --model
+switches that server to the model; without one, a server is started here and stopped when the chat or the benchmark ends.
 """
 from __future__ import annotations
 
@@ -65,8 +66,14 @@ class Server:
                 self.child.kill()
 
 
+def install_root() -> Path:
+    """Install directory to discover models from: ``STRATA_INSTALL_DIR`` if set, else ``ROOT``."""
+    raw = (os.environ.get("STRATA_INSTALL_DIR") or "").strip()
+    return Path(raw).expanduser() if raw else ROOT
+
+
 def entry_of(name: str) -> dict:
-    models = registry.discover(ROOT)
+    models = registry.discover(install_root())
     e = registry.find(models, name)
     if e is None:
         raise SystemExit(f"polystrata: no model named {name!r}.  Installed: " +
@@ -86,7 +93,7 @@ def port_of(entry: dict, asked: int | None) -> int:
 
 
 def list_models(port: int | None, key: str) -> int:
-    models = registry.discover(ROOT)
+    models = registry.discover(install_root())
     if not models:
         print("no model is installed: run setup (START-HERE.bat, or ./setup.sh)")
         return 1
@@ -200,24 +207,46 @@ def benchmark(a) -> int:
     return 0
 
 
-def main() -> int:
+def start_server(a) -> int:
+    """Start the PolyStrata inference server in the foreground for a configured model."""
+    entry = entry_of(a.model)
+    port = port_of(entry, a.port)
+    cmd = [sys.executable, str(ROOT / "serve" / "server.py"), "--engine", "strata",
+           "--config", entry["config"], "--port", str(port)]
+    if getattr(a, "host", None):
+        cmd += ["--host", a.host]
+    if getattr(a, "api_key", ""):
+        cmd += ["--api-key", a.api_key]
+    if getattr(a, "open", False):
+        cmd.append("--open")
+    return subprocess.call(cmd, cwd=str(ROOT))
+
+
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", nargs="?", choices=["chat", "benchmark"], default="chat")
+    ap.add_argument("command", nargs="?", choices=["chat", "benchmark", "start"], default="chat")
+    ap.add_argument("target", nargs="?", help=argparse.SUPPRESS)
     ap.add_argument("--list-models", action="store_true", help="the installed models, and which is in memory")
     ap.add_argument("--model", help="a model's name, as --list-models shows it (a part of it is enough when only "
                                     "one name has it)")
     ap.add_argument("--port", type=int, help="the server's port (default: the model's own, from its config)")
+    ap.add_argument("--host", help="start: override the server's bind address")
+    ap.add_argument("--open", action="store_true", help="start: open the Monitor page in a browser")
     ap.add_argument("--api-key", default=os.environ.get("STRATA_API_KEY", ""))
     ap.add_argument("--think", default="medium", choices=["none", "low", "medium", "high"])
     ap.add_argument("--max-tokens", type=int, help="a reply's length (chat: 4096, benchmark: 256)")
     ap.add_argument("--prompt-tokens", type=lambda s: [int(x) for x in s.split(",")], default=[2000, 8000],
                     help="benchmark: the long prompts' sizes in tokens, roughly (default 2000,8000)")
     ap.add_argument("--json", help="benchmark: also write the figures to this file")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
+    if not a.model and a.target:
+        a.model = a.target
     if a.list_models:
         return list_models(a.port, a.api_key)
     if not a.model:
         ap.error("give --model <name> (see --list-models)")
+    if a.command == "start":
+        return start_server(a)
     if a.command == "benchmark":
         a.max_tokens = a.max_tokens or 256
         return benchmark(a)

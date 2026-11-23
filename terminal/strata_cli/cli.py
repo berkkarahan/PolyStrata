@@ -65,7 +65,9 @@ def parser() -> argparse.ArgumentParser:
                     help="print the version and the interpreter this terminal runs on")
     sp = ap.add_subparsers(dest="command", required=True)
     serve = sp.add_parser("serve", help="start the existing Strata inference server in the foreground")
-    serve.add_argument("--profile", "--config", dest="config", required=True, metavar="CONFIG.json")
+    serve_src = serve.add_mutually_exclusive_group(required=True)
+    serve_src.add_argument("--profile", "--config", dest="config", metavar="CONFIG.json")
+    serve_src.add_argument("--model", metavar="MODEL", help="installed model tag or name (from configs/ or legacy root)")
     serve.add_argument("--engine", choices=("strata", "mock"), default="strata",
                        help="strata: the engine in the run config (default); mock: a scripted engine for client tests, "
                             "no GPU and no model")
@@ -86,6 +88,24 @@ def parser() -> argparse.ArgumentParser:
                        help="human output, JSON plan, or JSONL foreground lifecycle")
     serve.add_argument("--json", action="store_true", help="alias for --plan --output json")
     serve.add_argument("--quiet", action="store_true", help="suppress human informational output")
+
+    run_cmd = sp.add_parser("run", help="start an installed model in the foreground by model tag or name")
+    run_cmd.add_argument("model", help="installed model tag or name")
+    run_cmd.add_argument("--engine", choices=("strata", "mock"), default="strata")
+    run_cmd.add_argument("--host")
+    run_cmd.add_argument("--port", type=int)
+    run_cmd.add_argument("--parallel", type=int)
+    run_cmd.add_argument("--batch-groups")
+    run_cmd.add_argument("--max-queue", type=int)
+    run_cmd.add_argument("--queue-timeout", type=float)
+    run_cmd.add_argument("--batch-telemetry", action=argparse.BooleanOptionalAction, default=None)
+    run_cmd.add_argument("--offline", action="store_true")
+    run_cmd.add_argument("--ready-file")
+    run_cmd.add_argument("--shutdown-timeout", type=float, default=30)
+    run_cmd.add_argument("--plan", action="store_true", help="validate and print the effective launch without starting")
+    run_cmd.add_argument("--output", choices=("human", "json", "jsonl"), default="human")
+    run_cmd.add_argument("--json", action="store_true", help="alias for --plan --output json")
+    run_cmd.add_argument("--quiet", action="store_true", help="suppress human informational output")
 
     profile = sp.add_parser("profile", help="edit saved serving overrides outside setup's run config")
     profile_sp = profile.add_subparsers(dest="profile_command", required=True)
@@ -195,6 +215,10 @@ def parser() -> argparse.ArgumentParser:
     models_move.add_argument("--plan", action="store_true", help="say what would happen and change nothing")
     models_move.add_argument("--cancel-file", metavar="PATH", help="stop (safely) when this file appears")
     models_move.add_argument("--output", choices=("human", "json", "jsonl"), default="human")
+    models_migrate = models_sp.add_parser("migrate", help="move flat strata-*.json, shared settings, logs and run-* scripts into configs/, logs/ and scripts/")
+    models_migrate.add_argument("--install-dir", help="absolute path to a Strata installation")
+    models_migrate.add_argument("--dry-run", action="store_true", help="show what would move without changing any files")
+    models_migrate.add_argument("--output", choices=("human", "json"), default="human")
     from strata_cli import drafting_cmd
     drafting_cmd.add_parser(sp)
     from strata_cli import split_cmd
@@ -538,7 +562,7 @@ def parser() -> argparse.ArgumentParser:
                           help="which shell to print the script for (default bash)")
     for one_shot in (profile_create, profile_list, profile_show, profile_validate, profile_set,
                      profile_source, profile_edit, profile_history, profile_rollback, doctor,
-                     components_verify, models_list, models_inspect, models_import, models_move, calibrate,
+                     components_verify, models_list, models_inspect, models_import, models_move, models_migrate, calibrate,
                      runtime_start, runtime_status, runtime_verify, runtime_stop, runtime_cleanup, runtime_restart,
                      *ops_items, bench_run, bench_report, bench_compare, code_sessions, *update_parsers):
         one_shot.add_argument("--json", action="store_true", help="alias for --output json")
@@ -599,6 +623,42 @@ def _models(a: argparse.Namespace) -> int:
         return _success({"plan": result}, machine=a.output == "json", human=_import_words(result))
     if a.models_command == "move":
         return _models_move(a)
+    if a.models_command == "migrate":
+        from strata_control import layout
+        target, source = models.resolve_install(a.install_dir)
+        res = layout.migrate_legacy_layout(target, dry_run=bool(a.dry_run))
+        moved_items = [{"from": str(s), "to": str(d)} for s, d in res["moved"]]
+        skipped_items = [{"from": str(s), "to": str(d), "reason": r} for s, d, r in res["skipped"]]
+        payload = {
+            "install_dir": str(target),
+            "install_dir_source": source,
+            "dry_run": bool(a.dry_run),
+            "moved": moved_items,
+            "moved_count": len(moved_items),
+            "skipped": skipped_items,
+            "skipped_count": len(skipped_items),
+            "warnings": res["warnings"],
+            "errors": res["errors"],
+            "profiles_updated": res["profiles_updated"],
+        }
+        if res["errors"]:
+            if a.output == "json":
+                print(json.dumps({"schema_version": 1, "ok": False, **payload}, ensure_ascii=False, allow_nan=False))
+            else:
+                for err in res["errors"]:
+                    print(f"strata: {err}", file=sys.stderr)
+            return 1
+        if moved_items:
+            verb = "Would move" if a.dry_run else "Moved"
+            lines = [f"{verb} {len(moved_items)} item(s) under {target}:"]
+            lines += [f"  {item['from']} -> {item['to']}" for item in moved_items]
+        else:
+            lines = [f"Nothing to migrate under {target}."]
+        if skipped_items:
+            lines.append(f"Skipped {len(skipped_items)} item(s).")
+        if res["profiles_updated"]:
+            lines.append(f"Updated {len(res['profiles_updated'])} profile(s).")
+        return _success(payload, machine=a.output == "json", human="\n".join(lines))
     if a.models_command == "list":
         if a.served:
             if a.install_dir:
@@ -951,11 +1011,48 @@ def _serve_foreground(server_main, args: list[str], plan: dict, *, output: str, 
     return server_main(args, interrupt_exit_code=130)
 
 
+def _resolve_model_config(name: str) -> str:
+    from serve import models as registry
+    from strata_control import discovery
+    roots = []
+    for place in discovery.places(here=ROOT):
+        p = Path(place.path) if hasattr(place, "path") else Path(place)
+        if p.is_dir():
+            roots.append(p)
+    if not roots:
+        roots = [ROOT]
+    discovered: list[dict] = []
+    seen: set[str] = set()
+    for base in roots:
+        for entry in registry.discover(base):
+            cid = str(entry.get("id") or "").lower()
+            if cid and cid not in seen:
+                seen.add(cid)
+                discovered.append(entry)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        match = registry.find(discovered, name)
+    if match is None:
+        msg = buf.getvalue().strip()
+        if msg:
+            raise ProfileError(msg, 2)
+        installed = ", ".join(m["id"] for m in discovered) or "none"
+        raise ProfileError(f"no installed model named {name!r} (installed: {installed})", 5)
+    return str(match["config"])
+
+
 def _serve(a: argparse.Namespace) -> int:
     if a.output == "json" and not a.plan:
         return _serve_error(a, "--output json requires --plan; use --output jsonl for foreground events")
     if a.output == "jsonl" and a.plan:
         return _serve_error(a, "--plan uses --output human or json; jsonl is for foreground events")
+    if getattr(a, "config", None) is None and (getattr(a, "command", None) == "run" or getattr(a, "model", None) is not None):
+        try:
+            a.config = _resolve_model_config(a.model)
+        except ProfileError as exc:
+            if a.output == "jsonl":
+                return _serve_error(a, str(exc), getattr(exc, "exit_code", 2))
+            raise
     if a.port is not None and not 0 <= a.port <= 65535:
         return _serve_error(a, "--port must be in 0..65535")
     if a.parallel is not None and not 1 <= a.parallel <= 1024:
@@ -2191,7 +2288,7 @@ def _repair_access(a: argparse.Namespace) -> int:
 
 def _run(a: argparse.Namespace) -> int:
     try:
-        if a.command == "serve":
+        if a.command in ("serve", "run"):
             return _serve(a)
         if a.command == "install":
             return _install(a)

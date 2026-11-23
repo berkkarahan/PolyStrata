@@ -5,7 +5,7 @@ PolyStrata installs with `START-HERE.bat` (Windows) or `./setup.sh` (Linux, Mac)
 is about the Strata project's Terminal (the `strata` command), which this repository does not publish.
 Detailed engine errors are in the [engine reference](DETAILS.md#troubleshooting).
 
-**Quick check.** Run this and keep its output, and the end of `strata-<model>.log` in the `terminal` folder, for a bug report:
+**Quick check.** Run this and keep its output, and the end of `terminal/logs/strata-<model>.log` (or `terminal/strata-<model>.log` on older installs), for a bug report:
 
 ```sh
 START-HERE.bat --check       # Linux and Mac: ./setup.sh --check
@@ -278,7 +278,7 @@ flickers, the engine dies, and the Event Viewer shows `VIDEO_ENGINE_TIMEOUT_DETE
 Linux). PolyStrata 0.1.39 and newer say "the GPU stopped responding" in the log. It was seen with KV streaming on
 (`--kv-resident 32768`, which setup turns on from 64K context) while reading a long prompt on a gfx1201 card. Try these
 in order, one at a time, and tell us what changed:
-1. **Send us the evidence.** The last ~80 lines of the engine log (`strata-<model>.log` in the `terminal` folder of PolyStrata; the server window
+1. **Send us the evidence.** The last ~80 lines of the engine log (`terminal/logs/strata-<model>.log`, or `terminal/strata-<model>.log` on older installs; the server window
    shows the same lines), your AMD driver version (AMD Software > System), your card and Windows version, the PolyStrata
    version, and the exact steps (context size, how long the prompt was, which app sent it). If Windows wrote a
    dump, the newest `.dmp` in `C:\Windows\LiveKernelReports\WATCHDOG` (or `C:\Windows\Minidump`) helps; it holds no
@@ -321,7 +321,7 @@ overwrite local branches or edits just to make `git pull` succeed.
 
 **Sending logs for a bug report.**
 - **Terminal:** include `strata --version`, `strata doctor --live`, `strata launch --status`, and the relevant log excerpt.
-- **PolyStrata (START-HERE.bat or setup.sh):** `strata-<model>.log` from the `terminal` folder.
+- **PolyStrata (START-HERE.bat or setup.sh):** `terminal/logs/strata-<model>.log` (or `terminal/strata-<model>.log` on older installs).
 
 Look through a log before you send it, and never send an API key. Include model and quantization, OS, GPU/VRAM, RAM,
 driver, install route (Terminal or setup), PolyStrata and engine versions, exact command, expected result and

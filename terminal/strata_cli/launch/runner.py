@@ -23,6 +23,7 @@ import threading
 import time
 from strata_control import vram_fit
 from strata_control.childenv import quiet_crash_env
+from strata_control import layout
 from strata_control import reader_room
 from strata_control import atomic as _atomic_mod
 from dataclasses import dataclass, field
@@ -1774,7 +1775,7 @@ class Runner:
             self.prepare_pack(model_dir, pack_dir, files)
         cfg, problems = adopt.plan(family=s.family, model=s.model, model_dir=model_dir, data_dir=data_dir, src=cat.src,
                                    context=s.context or 32768, kv=s.kv, model_name=f"{fam.get('name', s.family)}-{s.model.lower()}", family_def=fam,
-                                   log=cat.root / f"strata-{tag}.log", backend=backend,
+                                   log=layout.log_path(cat.root, tag), backend=backend,
                                    vram_gb=float(cat.computer().main_vram_gb or 0), notes=self.notices, pack_name=tag.lower())
         if cfg is None:
             if backend == "sycl":
@@ -1784,7 +1785,7 @@ class Runner:
             raise LaunchError("The installer cannot set up this graphics card yet, and the files Strata would need to write the settings itself are not all there: "
                               + "; ".join(problems) + ".",
                               "Use model files that were prepared on this computer already (folder + pack): for an Intel Arc card the steps are in docs/INTEL_ARC.md (the Terminal carries tools/iq_pack.py for the pack). Or install on a computer with an NVIDIA or AMD card.", 5)
-        path = cat.root / f"strata-{tag}.json"
+        path = layout.config_path(cat.root, tag)
         adopt.write(path, cfg)
         self.notices.append("The downloader built into this Terminal sets up NVIDIA and AMD cards only (Intel Arc cards have a separate installer), so Strata wrote the "
                             f"run settings itself from the prepared model files already on this computer ({path.name}). No model files were downloaded.")

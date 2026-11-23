@@ -90,7 +90,7 @@ class Main(unittest.TestCase):
                 self.downloads, self.runs, self.verified = [], [], []
                 code, out, _ = self.main(family="lfm25", model=size, ram=64.0, vram=8188 / 1024)
                 self.assertEqual(code, 0, out)
-                cfg = json.loads((self.t / f"strata-lfm25-{size.lower()}.json").read_text())   # one config a size
+                cfg = json.loads((self.t / "configs" / f"strata-lfm25-{size.lower()}.json").read_text())   # one config a size
                 file = f"LFM2.5-24B-A2B-{size}.gguf"
                 self.assertEqual(self.downloads, [FAM["models"][size].get("hf", FAM["hf"]) + file])
                 self.assertEqual(self.verified, [(file, *FAM["sha256"][file])])
@@ -110,7 +110,7 @@ class Main(unittest.TestCase):
     def test_a_card_that_holds_every_expert_reads_2048_tokens_at_a_time(self):
         code, out, _ = self.main(family="lfm25", model="Q8_0", ram=64.0, vram=32607 / 1024)   # an RTX 5090
         self.assertEqual(code, 0, out)
-        args = json.loads((self.t / "strata-lfm25-q8_0.json").read_text())["args"]
+        args = json.loads((self.t / "configs" / "strata-lfm25-q8_0.json").read_text())["args"]
         self.assertEqual(args[args.index("--prompt-batch") + 1], "2048")
 
     def test_the_context_question_has_this_model_s_laptop_numbers(self):
@@ -126,7 +126,7 @@ class Main(unittest.TestCase):
             with self.subTest(ram=ram):
                 code, out, _ = self.main(family="lfm25", ram=ram, vram=8.0)
                 self.assertEqual(code, 0, out)
-                self.assertTrue((self.t / f"strata-lfm25-{size.lower()}.json").is_file(), out)
+                self.assertTrue((self.t / "configs" / f"strata-lfm25-{size.lower()}.json").is_file(), out)
 
     def test_windows_is_not_asked(self):
         code, out, cfg = self.main(win=True, family="lfm25", ram=32.0, vram=8.0)

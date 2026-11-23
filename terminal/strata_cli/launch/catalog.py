@@ -695,31 +695,40 @@ class Catalog:
 
     # ---- installed models
     def installed_configs(self) -> list[dict]:
+        from strata_control import discovery
         out, seen = [], set()
-        for path in self.strata.configs():
-            seen.add(path.name)
+        for path in [*discovery.config_files(self.root), *self.strata.configs()]:
+            key = os.path.normcase(path.name)
+            if key in seen:
+                continue
+            seen.add(key)
             d = self.strata.describe_config(path)
             d["path"] = str(path)
             out.append(d)
         for place in self.places:
             if place.path == self.root:
                 continue
-            from strata_control import discovery
             for path in discovery.config_files(place.path):
-                if path.name in seen:
+                key = os.path.normcase(path.name)
+                if key in seen:
                     continue
-                seen.add(path.name)
+                seen.add(key)
                 d = self.strata.describe_config(path)
                 d["path"] = str(path)
                 out.append(d)
         return out
 
     def installed_config(self, tag: str) -> Path | None:
-        name = f"strata-{tag.lower()}.json"
+        from strata_control import layout
+        try:
+            canon = layout.normalize_tag(tag)
+        except ValueError:
+            return None
+        name = f"strata-{canon}.json"
         for folder in [self.root, *[p.path for p in self.places if p.path != self.root]]:
-            p = folder / name
-            if p.is_file():
-                return p
+            for p in (layout.config_path(folder, canon), folder / name):
+                if p.is_file():
+                    return p
         return None
 
     def installed_with_files(self, tag: str) -> bool:
@@ -731,7 +740,7 @@ class Catalog:
             return False
         try:
             from strata_control import discovery
-            cfg = json.loads(path.read_text(encoding="utf-8"))
+            cfg = json.loads(path.read_text(encoding="utf-8-sig"))
             gone = {m.kind for m in discovery.footprint(cfg, path).missing()}
         except (OSError, ValueError, AttributeError, TypeError):
             return True

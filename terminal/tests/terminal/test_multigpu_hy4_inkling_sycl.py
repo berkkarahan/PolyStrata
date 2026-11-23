@@ -291,7 +291,7 @@ class SetupMultiGpuTests(unittest.TestCase):
                 self.assertEqual(rc_hy4, 0)
                 printed = "\n".join(str(c) for c in mock_print.call_args_list)
                 self.assertNotIn("runs on one GPU so far", printed)
-                hy4_cfg = json.loads((home / "strata-hy4-flash-sq-64.json").read_text(encoding="utf-8"))
+                hy4_cfg = json.loads((home / "configs" / "strata-hy4-flash-sq-64.json").read_text(encoding="utf-8"))
                 self.assertEqual(hy4_cfg["backend"], "sycl")
                 self.assertEqual(hy4_cfg["gpu"], [1, 0])
                 self.assertEqual(hy4_cfg["gpu_order"], "as_given")

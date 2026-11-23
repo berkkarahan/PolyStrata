@@ -116,8 +116,9 @@ done
 # ---- run settings made by an image for another card or another engine version name that image's engine folder
 # (/opt/strata/components/engine/<package>/...): in this image that folder is not there, so the server would stop at the start. Drop
 # them; the next step writes them again from the model files, which are kept.
-for c in /data/install/strata-*.json; do
+for c in /data/install/configs/strata-*.json /data/install/strata-*.json; do
   [ -f "$c" ] || continue
+  case "$c" in *.shared-settings.json) continue ;; esac
   gone=$("$PYBIN" -c '
 import json, os, sys
 def walk(v):
@@ -221,8 +222,9 @@ case "$gpus" in ""|all|ALL) ;; *)
   # `launch --gpu` is applied when a model is first set up; a model that is already set up keeps its card. So that GPU / GPUS take effect on
   # a volume that already has the model, run settings that name another card are dropped: setup writes them again from the files that are there.
   want=$(printf '%s' "$gpus" | tr -d ' ')
-  for c in /data/install/strata-*.json; do
+  for c in /data/install/configs/strata-*.json /data/install/strata-*.json; do
     [ -f "$c" ] || continue
+    case "$c" in *.shared-settings.json) continue ;; esac
     cur=$("$PYBIN" -c 'import json, sys; g = json.load(open(sys.argv[1])).get("gpu"); print(",".join(map(str, g)) if isinstance(g, list) else ("" if g is None else g))' "$c" 2>/dev/null)
     if [ "$cur" != "$want" ]; then
       say "The saved run settings use graphics card '${cur:-default}', GPU/GPUS asks for '$want': making them again (model files are kept)."

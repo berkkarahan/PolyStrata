@@ -362,7 +362,8 @@ def config_files(install: Path | None) -> list[Path]:
     """The ``strata-<model>.json`` run configs of an install folder."""
     if not install or not Path(install).is_dir():
         return []
-    return [p for p in Path(install).glob("strata-*.json") if not p.name.endswith(".shared-settings.json")]
+    from strata_control import discovery
+    return discovery.config_files(Path(install))
 
 
 def _prune(folder: Path, stop_at: Path) -> None:

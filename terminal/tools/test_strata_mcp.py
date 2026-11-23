@@ -1358,6 +1358,176 @@ class DraftLayerAndCancel(unittest.TestCase):
             top.wait(10)
 
 
+class ShadowedLegacyRemoveTest(unittest.TestCase):
+    """Removing a model in configs/ also cleans shadowed legacy root strata-<tag>.json and legacy sidecars safely."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        d = Path(self.tmp.name)
+        self.root, self.data, self.outside = d / "install", d / "data", d / "outside"
+        for p in (self.root / "configs", self.root / "logs", self.root / "scripts",
+                  self.data / "models" / "DUP", self.outside):
+            p.mkdir(parents=True)
+        (d / "settings.json").write_text(json.dumps({"data_dir": str(self.data)}), encoding="utf-8")
+        env = mock.patch.dict(os.environ, {"STRATA_SETTINGS_FILE": str(d / "settings.json")})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def _cfg(self, path: Path, gguf: Path, extra_args: list[str] | None = None, log: Path | None = None) -> Path:
+        data = {"exe": sys.executable, "args": ["--native", str(gguf), *(extra_args or [])], "port": 8080,
+                "model_name": path.stem[len("strata-"):]}
+        if log is not None:
+            data["log"] = str(log)
+        path.write_text(json.dumps(data), encoding="utf-8")
+        return path
+
+    def test_remove_cleans_shadowed_legacy_config_and_sidecars(self):
+        gguf = self.data / "models" / "DUP" / "dup.gguf"
+        gguf.write_bytes(b"gguf")
+        self._cfg(self.root / "configs" / "strata-dup.json", gguf)
+        self._cfg(self.root / "strata-dup.json", gguf)
+        (self.root / "configs" / "strata-dup.shared-settings.json").write_text('{"temperature": 0.3}', encoding="utf-8")
+        (self.root / "configs" / "models.json").write_text('{"dup": {"display_name": "Keep Overlay"}}', encoding="utf-8")
+        (self.root / "logs" / "strata-dup.log").write_text("new log\n", encoding="utf-8")
+        (self.root / "scripts" / "run-dup.bat").write_text("echo run\r\n", encoding="utf-8")
+        (self.root / "strata-dup.json.bak").write_text("{}", encoding="utf-8")
+        (self.root / "strata-dup.shared-settings.json").write_text('{"temperature": 0.1}', encoding="utf-8")
+        (self.root / "strata-dup.log").write_text("old log\n", encoding="utf-8")
+        (self.root / "strata-dup.warm-start").write_text("ws", encoding="utf-8")
+        (self.root / "strata-dup.warm-start-1.bin").write_bytes(b"bin")
+        (self.root / "strata-dup.tool-media").mkdir()
+        (self.root / "strata-dup.tool-media" / "pic.png").write_bytes(b"png")
+        (self.root / "run-dup.bat").write_text("echo old\r\n", encoding="utf-8")
+        (self.root / "run-dup.sh").write_text("echo old\n", encoding="utf-8")
+
+        s = M.Strata(self.root)
+        res = M.Tools(s).strata_remove(model="dup", confirm=True)
+        self.assertEqual(res["failed"], [], res)
+        self.assertEqual(s.configs(), [])
+        self.assertFalse(gguf.exists())
+        for gone in (
+            self.root / "configs" / "strata-dup.json",
+            self.root / "configs" / "strata-dup.shared-settings.json",
+            self.root / "logs" / "strata-dup.log",
+            self.root / "scripts" / "run-dup.bat",
+            self.root / "strata-dup.json",
+            self.root / "strata-dup.json.bak",
+            self.root / "strata-dup.shared-settings.json",
+            self.root / "strata-dup.log",
+            self.root / "strata-dup.warm-start",
+            self.root / "strata-dup.warm-start-1.bin",
+            self.root / "strata-dup.tool-media",
+            self.root / "run-dup.bat",
+            self.root / "run-dup.sh",
+        ):
+            self.assertFalse(gone.exists(), str(gone))
+        self.assertTrue((self.root / "configs" / "models.json").is_file(), "models.json must never be removed")
+
+    def test_remove_with_legacy_pointing_to_external_gguf_keeps_external_file(self):
+        managed = self.data / "models" / "DUP" / "m.gguf"
+        managed.write_bytes(b"managed")
+        ext_gguf = self.outside / "user-own.gguf"
+        ext_gguf.write_bytes(b"user-gguf")
+        ext_log = self.outside / "user.log"
+        ext_log.write_text("user log\n", encoding="utf-8")
+
+        cfg = self._cfg(self.root / "configs" / "strata-dup.json", managed)
+        self._cfg(self.root / "strata-dup.json", ext_gguf, log=ext_log)
+
+        s = M.Strata(self.root)
+        plan = s.removal_plan(cfg)
+        self.assertTrue(any(Path(k["path"]) == ext_gguf for k in plan["keep"]), plan["keep"])
+        res = M.Tools(s).strata_remove(model="dup", confirm=True)
+        self.assertEqual(res["failed"], [], res)
+        self.assertTrue(ext_gguf.is_file(), "external GGUF referenced by legacy config must stay")
+        self.assertTrue(ext_log.is_file(), "external log referenced by legacy config must stay")
+        self.assertFalse(managed.exists())
+        self.assertFalse((self.root / "strata-dup.json").exists())
+        self.assertEqual(s.configs(), [])
+
+    def test_remove_legacy_shared_file_with_second_model_kept_and_legacy_only_unchanged(self):
+        dup_gguf = self.data / "models" / "DUP" / "dup.gguf"
+        dup_gguf.write_bytes(b"dup")
+        (self.data / "models" / "DUP_LEG").mkdir(parents=True)
+        leg_only_gguf = self.data / "models" / "DUP_LEG" / "only-legacy.gguf"
+        leg_only_gguf.write_bytes(b"leg-only")
+        (self.data / "mtp" / "shared").mkdir(parents=True)
+        shared_mtp = self.data / "mtp" / "shared"
+        (shared_mtp / "draft.bin").write_bytes(b"draft")
+        (self.data / "models" / "M2").mkdir(parents=True)
+        m2_gguf = self.data / "models" / "M2" / "m2.gguf"
+        m2_gguf.write_bytes(b"m2")
+
+        cfg_dup = self._cfg(self.root / "configs" / "strata-dup.json", dup_gguf)
+        self._cfg(self.root / "strata-dup.json", leg_only_gguf, extra_args=["--mtp", str(shared_mtp)])
+        self._cfg(self.root / "configs" / "strata-m2.json", m2_gguf, extra_args=["--mtp", str(shared_mtp)])
+
+        s = M.Strata(self.root)
+        plan = s.removal_plan(cfg_dup)
+        self.assertTrue(any(Path(k["path"]) == shared_mtp for k in plan["keep"]), plan["keep"])
+        res = M.Tools(s).strata_remove(model="dup", confirm=True)
+        self.assertEqual(res["failed"], [], res)
+        self.assertTrue((shared_mtp / "draft.bin").is_file(), "shared MTP folder must stay for m2")
+        self.assertFalse(dup_gguf.exists())
+        self.assertFalse(leg_only_gguf.exists())
+        self.assertFalse((self.root / "strata-dup.json").exists())
+        self.assertEqual([c.name for c in s.configs()], ["strata-m2.json"])
+
+        # Legacy-only model (no configs/strata-only.json) still removes cleanly
+        (self.data / "models" / "ONLY").mkdir(parents=True)
+        only_gguf = self.data / "models" / "ONLY" / "only.gguf"
+        only_gguf.write_bytes(b"only")
+        self._cfg(self.root / "strata-only.json", only_gguf)
+        (self.root / "strata-only.shared-settings.json").write_text('{"temperature": 0.5}', encoding="utf-8")
+        res2 = M.Tools(s).strata_remove(model="only", confirm=True)
+        self.assertEqual(res2["failed"], [], res2)
+        self.assertFalse(only_gguf.exists())
+        self.assertFalse((self.root / "strata-only.json").exists())
+        self.assertFalse((self.root / "strata-only.shared-settings.json").exists())
+        self.assertEqual([c.name for c in s.configs()], ["strata-m2.json"])
+
+    def test_remove_symlinked_legacy_config_unlinks_without_reading_or_deleting_target(self):
+        managed = self.data / "models" / "DUP" / "m.gguf"
+        managed.write_bytes(b"managed")
+        ext_gguf = self.outside / "made.gguf"
+        ext_gguf.write_bytes(b"outside-made")
+        ext_gguf.with_name(ext_gguf.name + ".done").write_text("done", encoding="utf-8")
+        target = self.outside / "target.json"
+        self._cfg(target, ext_gguf)
+
+        cfg = self._cfg(self.root / "configs" / "strata-dup.json", managed)
+        legacy = self.root / "strata-dup.json"
+        used_real_symlink = False
+        try:
+            os.symlink(target, legacy)
+            used_real_symlink = True
+        except (OSError, NotImplementedError):
+            legacy.write_text(target.read_text(encoding="utf-8"), encoding="utf-8")
+
+        s = M.Strata(self.root)
+        if used_real_symlink:
+            plan = s.removal_plan(cfg)
+            legacy_items = [x for x in plan["remove"] if Path(x["path"]) == legacy]
+            self.assertEqual(len(legacy_items), 1)
+            self.assertEqual(legacy_items[0]["bytes"], 0)
+            res = M.Tools(s).strata_remove(model="dup", confirm=True)
+        else:
+            real_is_sym = Path.is_symlink
+            with mock.patch.object(Path, "is_symlink", lambda p: True if p == legacy else real_is_sym(p)):
+                plan = s.removal_plan(cfg)
+                legacy_items = [x for x in plan["remove"] if Path(x["path"]) == legacy]
+                self.assertEqual(len(legacy_items), 1)
+                self.assertEqual(legacy_items[0]["bytes"], 0)
+                res = M.Tools(s).strata_remove(model="dup", confirm=True)
+
+        self.assertEqual(res["failed"], [], res)
+        self.assertFalse(legacy.exists() or legacy.is_symlink())
+        self.assertTrue(target.is_file(), "symlink target must remain untouched")
+        self.assertTrue(ext_gguf.is_file(), "files inside symlink target must not be read or deleted")
+        self.assertEqual(s.configs(), [])
+
+
 TablesMatch = Helpers
 
 

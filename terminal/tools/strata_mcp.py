@@ -55,6 +55,44 @@ CONTROL = os.environ.get("STRATA_CONTROL_INSTALL") == "1"
 DEFAULT_PORT = 8080
 STATE_DIR = ".strata-mcp"                             # in the PolyStrata folder (git-ignored)
 
+
+class _FallbackFitLabel:
+    """Stdlib-only fallback mirroring strata_control.fit_label when strata_control is unavailable."""
+
+    FITS = "fits"
+    SLOWER = "may run slower"
+    _GB = 1e9
+    _TABLE_BYTES = {"qwen": 28_800_138_432, "swift": 28_800_138_432, "coder": 28_800_138_432, "unsloth": 28_800_138_432, "nvfp4": 51_200_246_176}
+    _BIG_UNSLOTH = ("UD-Q5_K_XL", "UD-Q6_K_XL", "Q8_0")
+    _BIG_TABLE_BYTES = 54_400_261_312
+    _PACK_GB = {("nvfp4", "NVFP4-QAD"): 76.8}
+
+    @classmethod
+    def table_gb(cls, family: str | None, model: str | None, d: dict) -> float:
+        if d.get("mem_total") or family == "gyro":
+            return max(0.0, float(d["download_gb"]) - float(d["ram_gb"]))
+        if family == "unsloth" and model in cls._BIG_UNSLOTH:
+            return cls._BIG_TABLE_BYTES / cls._GB
+        return cls._TABLE_BYTES.get(str(family), 0) / cls._GB
+
+    @classmethod
+    def files_gb(cls, family: str | None, model: str | None, d: dict) -> float:
+        if (family, model) in cls._PACK_GB:
+            return cls._PACK_GB[(family, model)]
+        return round(float(d["download_gb"]) - cls.table_gb(family, model, d), 1)
+
+    @staticmethod
+    def card_room_gb(cards: list[dict] | None) -> float:
+        best = 0.0
+        for c in cards or []:
+            gb = float(c.get("dedicated_gb") or 0.0) if c.get("uma") else float(c.get("vram_gb") or 0.0)
+            best = max(best, gb)
+        return best
+
+    @classmethod
+    def label(cls, size_gb: float, ram_gb: float | None, vram_gb: float | None) -> str:
+        return cls.FITS if float(size_gb) <= float(ram_gb or 0.0) + float(vram_gb or 0.0) else cls.SLOWER
+
 # What setup.py offers, used only when setup.py cannot be imported (the numbers are setup's MODELS / FAMILIES /
 # CONTEXTS; tools/test_strata_mcp.py checks they still match).
 FALLBACK_MODELS = {
@@ -718,6 +756,138 @@ def system_folders() -> list[Path]:
 
 
 # ------------------------------------------------------------------------------------------------ PolyStrata
+class _FallbackLayout:
+    """Stdlib-only layout fallback used when strata_control/ is absent in standalone deployments."""
+
+    CONFIGS_DIR = "configs"
+    LOGS_DIR = "logs"
+    SCRIPTS_DIR = "scripts"
+    SHARED_SETTINGS_SUFFIX = ".shared-settings.json"
+
+    @classmethod
+    def configs_dir(cls, home: Path | str) -> Path:
+        return Path(home) / cls.CONFIGS_DIR
+
+    @classmethod
+    def logs_dir(cls, home: Path | str) -> Path:
+        return Path(home) / cls.LOGS_DIR
+
+    @classmethod
+    def scripts_dir(cls, home: Path | str) -> Path:
+        return Path(home) / cls.SCRIPTS_DIR
+
+    @classmethod
+    def _normalize_tag(cls, tag: str) -> str:
+        if not isinstance(tag, str):
+            raise ValueError(f"invalid model tag: {tag!r}")
+        t = tag.strip()
+        if t.lower().startswith("strata-"):
+            t = t[len("strata-"):]
+        t = t.lower()
+        if (
+            not t
+            or "/" in t
+            or "\\" in t
+            or ":" in t
+            or any(ord(c) < 32 or ord(c) == 127 for c in t)
+            or t in (".", "..")
+            or ".." in t
+            or t.endswith(".")
+            or t.endswith(".json")
+            or t.endswith(".shared-settings")
+        ):
+            raise ValueError(f"invalid model tag: {tag!r}")
+        return t
+
+    @classmethod
+    def config_path(cls, home: Path | str, tag: str) -> Path:
+        return cls.configs_dir(home) / f"strata-{cls._normalize_tag(tag)}.json"
+
+    @classmethod
+    def shared_settings_path(cls, cfg_path: Path | str) -> Path:
+        p = Path(cfg_path)
+        return p.with_name(p.stem + cls.SHARED_SETTINGS_SUFFIX)
+
+    @staticmethod
+    def backup_path(cfg_path: Path | str) -> Path:
+        p = Path(cfg_path)
+        return p.with_name(p.name + ".bak")
+
+    @classmethod
+    def log_path(cls, home: Path | str, tag: str) -> Path:
+        return cls.logs_dir(home) / f"strata-{cls._normalize_tag(tag)}.log"
+
+    @classmethod
+    def script_path(cls, home: Path | str, tag: str, *, windows: bool | None = None) -> Path:
+        is_win = WIN if windows is None else windows
+        ext = "bat" if is_win else "sh"
+        return cls.scripts_dir(home) / f"run-{cls._normalize_tag(tag)}.{ext}"
+
+    @classmethod
+    def is_config_file(cls, path: Path | str) -> bool:
+        n = Path(path).name.lower()
+        return (
+            n.startswith("strata-")
+            and n.endswith(".json")
+            and not n.endswith(cls.SHARED_SETTINGS_SUFFIX)
+            and len(n) > len("strata-.json")
+        )
+
+    @classmethod
+    def tag_from_config(cls, path: Path | str) -> str | None:
+        p = Path(path)
+        if not cls.is_config_file(p):
+            return None
+        return p.name[len("strata-"):-len(".json")]
+
+    @staticmethod
+    def _is_non_dir_entry(path: Path) -> bool:
+        try:
+            return path.is_symlink() or not path.is_dir()
+        except OSError:
+            return False
+
+    @classmethod
+    def iter_config_files(cls, home: Path | str, *, include_legacy: bool = True) -> list[Path]:
+        base = Path(home)
+        search_dirs = [cls.configs_dir(base)]
+        if include_legacy:
+            search_dirs.append(base)
+        out: list[Path] = []
+        seen: set[str] = set()
+        for d in search_dirs:
+            try:
+                if not d.is_dir():
+                    continue
+                entries = sorted(
+                    (p for p in d.iterdir() if cls.is_config_file(p) and cls._is_non_dir_entry(p)),
+                    key=lambda p: p.name.lower(),
+                )
+            except OSError:
+                continue
+            for p in entries:
+                key = p.name.lower()
+                if key not in seen:
+                    seen.add(key)
+                    out.append(p)
+        return out
+
+    @classmethod
+    def find_config(cls, home: Path | str, name_or_tag: str, *, include_legacy: bool = True) -> Path | None:
+        raw = str(name_or_tag or "").strip()
+        if not raw:
+            return None
+        low = raw.lower()
+        want_tag = low[len("strata-"):] if low.startswith("strata-") else low
+        if want_tag.endswith(".json"):
+            want_tag = want_tag[:-len(".json")]
+        for p in cls.iter_config_files(home, include_legacy=include_legacy):
+            t = (cls.tag_from_config(p) or "").lower()
+            if low in (t, p.stem.lower(), p.name.lower()) or (want_tag and want_tag == t):
+                return p
+        return None
+
+
 class Strata:
     """One PolyStrata folder: what is installed there, the PC, and the processes this server started."""
 
@@ -809,7 +979,10 @@ class Strata:
         """Where Hy4-Flash `build`'s experts go on this PC (hy4_fit.place) and whether it is the recommended build; None when the RAM is not known."""
         if ram is None:
             return None
-        from strata_control import hy4_fit
+        try:
+            from strata_control import hy4_fit
+        except ImportError:
+            return None
         uni = next((g for g in usable if g.get("unified_gb")), None)
         uma = next((g for g in usable if g.get("uma")), None)
         extra_vram_gib = 0.0
@@ -830,7 +1003,10 @@ class Strata:
         d = (getattr(self.setup_module(), "HY4_FAMILIES", None) or {}).get(family)
         if not d or model not in d["models"]:
             return None
-        from strata_control import hy4_fit
+        try:
+            from strata_control import hy4_fit
+        except ImportError:
+            return None
         b = hy4_fit.BUILDS[model]
         return {"about": d["models"][model]["about"], "download_gb": round(b["file_gb"] + hy4_fit.ENGRAM_GB + hy4_fit.VISION_GB, 1), "ram_gb": d["models"][model]["ram_gb"],
                 "arena_gb": b["bodies_gb"], "vision": True, "engine": None, "families": (family,), "context_fit": None, "hy4": True,
@@ -880,8 +1056,15 @@ class Strata:
 
     # ---- paths
     def settings_path(self) -> Path:
-        from strata_control import discovery          # the one definition setup.py and the Terminal use
-        return discovery.own_settings_file(windows=WIN)
+        try:
+            from strata_control import discovery      # the one definition setup.py and the Terminal use
+            return discovery.own_settings_file(windows=WIN)
+        except ImportError:
+            if os.environ.get("STRATA_SETTINGS_FILE"):
+                return Path(os.environ["STRATA_SETTINGS_FILE"])
+            if WIN:
+                return Path(os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")) / "PolyStrata" / "settings.json"
+            return Path(os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")) / "polystrata" / "settings.json"
 
     def data_dir(self) -> Path:
         try:
@@ -925,9 +1108,53 @@ class Strata:
         self.children = [p for p in self.children if p.poll() is None]
 
     # ---- what is installed
+    def _layout(self):
+        candidates: list[Path] = []
+        for base in (self.src, DEFAULT_ROOT):
+            if (base / "strata_control").is_dir() and base not in candidates:
+                candidates.append(base)
+        for base in candidates:
+            s_base = str(base)
+            orig_path = list(sys.path)
+            saved_mods = {
+                k: v for k, v in sys.modules.items()
+                if k == "strata_control" or k.startswith("strata_control.")
+            }
+            if s_base not in sys.path:
+                sys.path.insert(0, s_base)
+            elif sys.path.index(s_base) > 0:
+                sys.path.remove(s_base)
+                sys.path.insert(0, s_base)
+            if "strata_control" in sys.modules and "strata_control.layout" not in sys.modules:
+                pkg_paths = getattr(sys.modules["strata_control"], "__path__", ()) or ()
+                target_pkg = os.path.normcase(str((base / "strata_control").resolve()))
+                if not any(os.path.normcase(str(Path(p).resolve())) == target_pkg for p in pkg_paths):
+                    for k in list(saved_mods):
+                        sys.modules.pop(k, None)
+            try:
+                from strata_control import layout
+                return layout
+            except ImportError:
+                for k in list(sys.modules):
+                    if k == "strata_control" or k.startswith("strata_control."):
+                        sys.modules.pop(k, None)
+                sys.modules.update(saved_mods)
+                sys.path[:] = orig_path
+        try:
+            from strata_control import layout
+            return layout
+        except ImportError:
+            return _FallbackLayout
+
     def configs(self) -> list[Path]:
-        return sorted((p for p in self.root.glob("strata-*.json") if not p.name.endswith(".shared-settings.json")),
-                      key=lambda p: p.stat().st_mtime, reverse=True)   # #346: the settings file is no config
+        layout = self._layout()
+        def _sort_key(p: Path):
+            try:
+                mtime = p.lstat().st_mtime
+            except OSError:
+                mtime = 0.0
+            return (mtime, 1 if p.parent.name.lower() == layout.CONFIGS_DIR else 0)
+        return sorted(layout.iter_config_files(self.root), key=_sort_key, reverse=True)   # #346: the settings file is no config
 
     @staticmethod
     def read_config(path: Path) -> dict:
@@ -949,7 +1176,11 @@ class Strata:
             return False
 
     def describe_config(self, path: Path, usage: dict | None = None) -> dict:
-        cfg = self.read_config(path)
+        try:
+            is_sym = path.is_symlink()
+        except OSError:
+            is_sym = False
+        cfg = {} if is_sym else self.read_config(path)
         a = cfg.get("args") if isinstance(cfg.get("args"), list) else []
 
         def val(k):
@@ -959,10 +1190,22 @@ class Strata:
                    if not p or not (self.engine_here(p, cfg) if str(p).startswith("component:") else Path(p).exists())]
         gaps = shard_gaps([x for x in a if isinstance(x, str) and x.endswith(".gguf")])   # a model in parts is whole only with every part
         missing += gaps
-        script = self.root / f"run-{tag}.{'bat' if WIN else 'sh'}"
+        layout = self._layout()
+        try:
+            script = layout.script_path(self.root, tag, windows=WIN)
+        except ValueError:
+            script = self.root / f"run-{tag}.{'bat' if WIN else 'sh'}"
+        if not script.exists():
+            legacy_script = self.root / f"run-{tag}.{'bat' if WIN else 'sh'}"
+            if legacy_script.exists():
+                script = legacy_script
         vis = cfg.get("vision")
         own_usage = (usage or self.disk_usage())["models"].get(tag) or {"gb": 0.0, "bytes": 0, "shared_bytes": 0}
         plan = self.removal_plan(path)
+        try:
+            last_used = time.strftime("%Y-%m-%d %H:%M", time.localtime(path.lstat().st_mtime))
+        except (OSError, ValueError, OverflowError):
+            last_used = None
         return {"model": tag, "config": path.name, "model_name": cfg.get("model_name"),
                 "context": int(val("--max-context")) if str(val("--max-context") or "").isdigit() else None,
                 "kv": val("--kv"), "images": ("gpu" if vis.get("gpu") else "cpu") if isinstance(vis, dict)
@@ -971,12 +1214,12 @@ class Strata:
                 "gpu": cfg.get("gpu"), "gpu_roles": cfg.get("gpu_roles"), "api_key_set": bool(cfg.get("api_key")),
                 "low_ram": "--resident-experts" in a or "--mmap-experts" in a,
                 "start_script": script.name if script.exists() else None,
-                "ready": not missing and bool(cfg), "missing_files": missing[:3], "parts_missing": len(gaps),
+                "ready": (not is_sym) and (not missing) and bool(cfg), "missing_files": missing[:3], "parts_missing": len(gaps),
                 "disk_gb": own_usage["gb"], "disk_bytes": own_usage["bytes"],
                 "shared_bytes": own_usage["shared_bytes"],
                 # what Delete would remove (files in PolyStrata's own folders that no other model uses); the person's own GGUF folders stay
                 "removable_gb": plan["gb"], "kept_files": len(plan["keep"]),
-                "last_used": time.strftime("%Y-%m-%d %H:%M", time.localtime(path.stat().st_mtime))}
+                "last_used": last_used}
 
     # ---- what a model owns on disk (Delete, and the per-model disk usage in Storage)
     FILE_FLAGS = ("--native", "--ple-gguf", "--embd-gguf", "--native-dense-gguf")
@@ -1102,9 +1345,40 @@ class Strata:
     def removal_plan(self, config: Path) -> dict:
         """What deleting this model removes and what it keeps. A file or folder another installed model's config still names
         (the shared MTP draft, a shared PLE shard) is kept; so is anything outside PolyStrata's own folders."""
+        layout = self._layout()
+        tag = config.stem[len("strata-"):]
         cfg = self.read_config(config)
-        files, dirs = self.model_paths(cfg)
-        files = self.with_shards(files)
+        legacy_cfgs: list[Path] = []
+        in_configs_dir = layout.is_config_file(config) and norm(config.parent) == norm(layout.configs_dir(self.root))
+        if in_configs_dir:
+            want_name = f"strata-{tag.lower()}.json"
+            try:
+                if self.root.is_dir():
+                    for entry in sorted(self.root.iterdir(), key=lambda p: p.name.lower()):
+                        if layout.is_config_file(entry) and entry.name.lower() == want_name:
+                            legacy_cfgs.append(entry)
+            except OSError:
+                pass
+        raw_files, raw_dirs = self.model_paths(cfg)
+        legacy_data: list[tuple[Path, dict]] = []
+        for lc in legacy_cfgs:
+            try:
+                if lc.is_symlink() or not lc.is_file():
+                    continue
+            except OSError:
+                continue
+            l_cfg = self.read_config(lc)
+            legacy_data.append((lc, l_cfg))
+            lf, ld = self.model_paths(l_cfg)
+            raw_files.extend(lf)
+            raw_dirs.extend(ld)
+        files = self.with_shards(raw_files)
+        seen_dirs, dirs = set(), []
+        for d in raw_dirs:
+            nd = norm(d)
+            if nd not in seen_dirs:
+                seen_dirs.add(nd)
+                dirs.append(d)
         used_files, used_dirs = set(), set()
         for other in self.configs():
             if norm(other) == norm(config):
@@ -1135,11 +1409,67 @@ class Strata:
                                   p.with_name(p.name + ".part.chunks")):
                         if extra.exists():
                             remove.append({"path": str(extra), "kind": "file", "bytes": self.tree_bytes(extra)})
-        tag = config.stem[len("strata-"):]
-        for extra in (config, config.with_name(config.name + ".bak"), config.with_name(f"strata-{tag}.log"),
-                      self.root / f"run-{tag}.bat", self.root / f"run-{tag}.sh"):
-            if extra.exists():
-                remove.append({"path": str(extra), "kind": "file", "bytes": self.tree_bytes(extra)})
+        extras: list[Path] = [
+            config,
+            layout.backup_path(config),
+            layout.shared_settings_path(config),
+            config.with_name(f"strata-{tag}.log"),
+            self.root / f"run-{tag}.bat",
+            self.root / f"run-{tag}.sh",
+            config.with_name(config.stem + ".warm-start"),
+            *sorted(config.parent.glob(f"{config.stem}.warm-start-*.bin")),
+            config.with_suffix(".tool-media"),
+        ]
+        if in_configs_dir:
+            legacy_bases = list(legacy_cfgs) or [self.root / f"strata-{tag}.json"]
+            for lc in legacy_bases:
+                l_tag = layout.tag_from_config(lc) or tag
+                extras.extend([
+                    lc,
+                    layout.backup_path(lc),
+                    layout.shared_settings_path(lc),
+                    lc.with_name(f"strata-{l_tag}.log"),
+                    lc.with_name(lc.stem + ".warm-start"),
+                    *sorted(lc.parent.glob(f"{lc.stem}.warm-start-*.bin")),
+                    lc.with_suffix(".tool-media"),
+                ])
+        try:
+            extras.append(layout.log_path(self.root, tag))
+            extras.append(layout.script_path(self.root, tag, windows=True))
+            extras.append(layout.script_path(self.root, tag, windows=False))
+        except ValueError:
+            pass
+        candidate_logs = [c.get("log") for c in (cfg, *(l_cfg for _lc, l_cfg in legacy_data))]
+        if any(isinstance(r, str) and r for r in candidate_logs):
+            other_logs = set()
+            for other in self.configs():
+                if norm(other) == norm(config):
+                    continue
+                other_raw = self.read_config(other).get("log")
+                if isinstance(other_raw, str) and other_raw:
+                    op = Path(other_raw)
+                    other_logs.add(norm(op if op.is_absolute() else self.root / op))
+            for raw_log in candidate_logs:
+                if isinstance(raw_log, str) and raw_log:
+                    log_p = Path(raw_log)
+                    if not log_p.is_absolute():
+                        log_p = self.root / log_p
+                    if self.allowed(log_p) and norm(log_p) not in other_logs:
+                        extras.append(log_p)
+        seen_extras: set[tuple[bool, Path]] = set()
+        for extra in extras:
+            try:
+                is_sym = extra.is_symlink()
+            except OSError:
+                is_sym = False
+            if not (is_sym or extra.exists()):
+                continue
+            n_extra = (True, Path(os.path.normcase(os.path.abspath(str(extra))))) if is_sym else (False, norm(extra))
+            if n_extra in seen_extras:
+                continue
+            seen_extras.add(n_extra)
+            kind = "folder" if extra.is_dir() and not is_sym else "file"
+            remove.append({"path": str(extra), "kind": kind, "bytes": 0 if is_sym else self.tree_bytes(extra)})
         total = sum(x["bytes"] for x in remove)
         return {"model": tag, "remove": remove, "keep": keep, "bytes": total, "gb": round(total / 1e9, 2)}
 
@@ -1150,13 +1480,13 @@ class Strata:
         if not model:
             return have[0]                              # the most recently used, as setup starts it
         m = model.strip().lower()
-        exact = [c for c in have if c.stem[len("strata-"):] == m]
+        exact = [c for c in have if c.stem[len("strata-"):].lower() == m]
         if exact:
             return exact[0]
         by_name = [c for c in have if str(self.read_config(c).get("model_name", "")).lower() == m]
         if by_name:
             return by_name[0]
-        ends = [c for c in have if c.stem.endswith("-" + m)]
+        ends = [c for c in have if c.stem.lower().endswith("-" + m)]
         if len(ends) == 1:
             return ends[0]
         raise ToolError(f"no installed model {model!r}; installed: " +
@@ -1415,7 +1745,12 @@ class Strata:
 
     def _mac_verdict(self, model: str, ram: float) -> str:
         mf = self.mac()
-        from strata_control import fit_label
+        try:
+            from strata_control import fit_label
+        except ImportError:
+            fit_label = _FallbackFitLabel
+        if not mf:
+            return fit_label.FITS
         if ram < mf.MIN_STREAM_RAM_GB:
             return fit_label.SLOWER                          # too little memory for the Metal engine's streaming: the same two words, said not refused
         return fit_label.SLOWER if mf.streams(model, ram) else fit_label.FITS          # the Mac's own count of what stays in memory (strata_control/mac_fit.py)
@@ -1448,7 +1783,10 @@ class Strata:
 
     def _mac_model_table(self, hw: dict) -> list:
         models, families, _ctx, _src = self.tables()
-        from strata_control import fit_label
+        try:
+            from strata_control import fit_label
+        except ImportError:
+            fit_label = _FallbackFitLabel
         ram = float(hw.get("ram_gb") or 0)
         have = {c.stem[len("strata-"):] for c in self.configs()}
         out = []
@@ -1575,8 +1913,14 @@ class Strata:
         if backend == "hip":
             notes.append("AMD (experimental): pictures are on; the reader runs on the CPU under 24 GB of VRAM and on the GPU from 24 GB")
         if backend == "sycl":
-            from strata_control import intel_app
-            notes.append(intel_app.NO_DOWNLOAD)
+            try:
+                from strata_control import intel_app
+                notes.append(intel_app.NO_DOWNLOAD)
+            except ImportError:
+                notes.append(
+                    'PolyStrata can\'t download models for an Intel Arc card yet. Choose "Use your own GGUF…" '
+                    "and pick the folder that holds the model's .gguf files; PolyStrata prepares them for this card."
+                )
         cmd = (("START-HERE.bat --setup" if WIN else "./setup.sh --setup") +
                f" --yes --family {fam} --model {model} --context {ctx}" + (f" --backend {backend}" if backend in ("hip", "sycl") else ""))
         return {"family": fam, "model": model, "title": families[fam]["title"] + " " + model, "context": ctx,
@@ -1591,7 +1935,10 @@ class Strata:
         ram = (hw or {}).get("ram_gb")
         usable = self.engine_gpus(hw)
         vram = max((g["vram_gb"] for g in usable), default=0.0)
-        from strata_control import fit_label
+        try:
+            from strata_control import fit_label
+        except ImportError:
+            fit_label = _FallbackFitLabel
         card_room = fit_label.card_room_gb(usable)
         have = {c.stem[len("strata-"):] for c in self.configs()}
         out = []
@@ -2523,7 +2870,14 @@ class Tools:
             failed = []
             # The plan can list a folder and files inside it, or a file that is already gone (an earlier delete, a file moved by hand):
             # a path that is not there is already removed, not an error. Only what is still there afterwards counts as a failure.
-            for item in sorted(plan["remove"], key=lambda x: (x["path"] == str(config), x["path"])):
+            s_root = getattr(s, "root", None)
+            def _rm_key(item: dict):
+                p = Path(item["path"])
+                is_cfg = item["path"] == str(config) or (
+                    s_root is not None and p.parent == s_root and p.name.lower() == config.name.lower()
+                )
+                return (is_cfg, item["path"])
+            for item in sorted(plan["remove"], key=_rm_key):
                 p = Path(item["path"])
                 try:
                     if p.is_dir() and not p.is_symlink():
@@ -2683,8 +3037,11 @@ class Tools:
                 raise ToolError(f"{model} does not fit this Mac: {rec['why']}")
             gpu = gpus = kv = low_ram = None
             if md.get("hy4"):
-                from strata_control import hy4_family
-                context = context or hy4_family.DEFAULT_CONTEXT
+                try:
+                    from strata_control import hy4_family
+                    context = context or hy4_family.DEFAULT_CONTEXT
+                except ImportError:
+                    context = context or 32768
             else:
                 context = context or (s.mac().recommend_context(hw.get("ram_gb") or 0) if s.mac() else 32768)
         if context is None:
@@ -2713,21 +3070,42 @@ class Tools:
         # Terminal does (strata_control/intel_app.py); it downloads nothing. NVIDIA and AMD never come here.
         arc = backend == "sycl" or (backend in (None, "auto") and any(g.get("vendor") == "intel" for g in hw.get("gpus", [])))
         if arc:
-            from strata_control import intel_app
-            if mac or not intel_app.supported_here() or not any(g.get("vendor") == "intel" for g in hw.get("gpus", [])):
+            try:
+                from strata_control import intel_app
+            except ImportError:
+                intel_app = None
+            has_intel_gpu = any(g.get("vendor") == "intel" for g in hw.get("gpus", []))
+            linux_host = intel_app.supported_here() if intel_app else sys.platform.startswith("linux")
+            if mac or not linux_host or not has_intel_gpu:
                 raise ToolError("no Intel Arc card PolyStrata can use was found in this computer (the Intel Arc engine runs on Linux)")
-            if not intel_app.can_set_up(family, families[family]):
+            if intel_app is not None:
+                can_arc = intel_app.can_set_up(family, families[family])
+                no_dl_msg = intel_app.NO_DOWNLOAD
+                has_local_arc = lambda: bool(intel_app.model_files_in(have_dir, family, families[family]))  # noqa: E731
+            else:
+                can_arc = family in ("qwen", "swift", "coder", "gyro", "unsloth", "hy4-flash") or bool(
+                    families[family].get("feed") or families[family].get("hy4")
+                )
+                no_dl_msg = (
+                    'PolyStrata can\'t download models for an Intel Arc card yet. Choose "Use your own GGUF…" '
+                    "and pick the folder that holds the model's .gguf files; PolyStrata prepares them for this card."
+                )
+                has_local_arc = lambda: have_dir.is_dir() and any(have_dir.glob("*.gguf"))  # noqa: E731
+            if not can_arc:
                 raise ToolError(f"{families[family]['title']} {model} can't be set up for an Intel Arc card yet; "
                                 "the Qwen3.8-Flash-Next, Swift, Coder, Gyro, Unsloth and Hy4-Flash sizes can")
             backend = "sycl"
             if not md.get("hy4") and not md.get("inkling"):
                 vision = "no"                  # pictures stay off on an Arc for GGUF families (strata_cli/launch/adopt.py)
-                if not gguf_dir and not intel_app.model_files_in(have_dir, family, families[family]):
-                    raise ToolError(intel_app.NO_DOWNLOAD)
+                if not gguf_dir and not has_local_arc():
+                    raise ToolError(no_dl_msg)
         if md.get("hy4"):                                       # Hy4-Flash: the files are in <models>/hy4-flash (the build, the shared Engram shard); the disk need is what is not there yet
-            from strata_control import hy4_family
-            have_files = hy4_family.local_files(target / "models" / hy4_family.FAMILY)
-            md = {**md, "download_gb": round(sum(hy4_family.size_of(n) / 1e9 for n in hy4_family.files_of(model, vision != "no") if n not in have_files), 1)}
+            try:
+                from strata_control import hy4_family
+                have_files = hy4_family.local_files(target / "models" / hy4_family.FAMILY)
+                md = {**md, "download_gb": round(sum(hy4_family.size_of(n) / 1e9 for n in hy4_family.files_of(model, vision != "no") if n not in have_files), 1)}
+            except ImportError:
+                pass
         partly = (have_dir.is_dir() and any(have_dir.glob("*.gguf*"))) or bool(gguf_dir) \
             or (ready_dir is not None and ready_dir.is_dir() and any(ready_dir.glob("*.gguf*")))   # a local folder: nothing to download
         repack_gb = 0 if md.get("hy4") else (s.mac().repacked_gb(model) if mac and s.mac() else 0)
@@ -2764,12 +3142,24 @@ class Tools:
         fit = None
         ram = hw.get("ram_gb")
         if ram is not None:
-            from strata_control import fit_label
-            fit = fit_label.label(fit_label.files_gb(family, model, md), ram, fit_label.card_room_gb(s.engine_gpus(hw)))
-            if md.get("hy4"):
-                row = s.hy4_fit_row(model, ram, s.engine_gpus(hw))
-                fit = None if row is None else ("may run slower" if row["mode"] == "cross_tier_ssd" else "fits")
-        installed = (s.root / f"strata-{tag.lower()}.json").exists()
+            try:
+                from strata_control import fit_label
+                fit = fit_label.label(fit_label.files_gb(family, model, md), ram, fit_label.card_room_gb(s.engine_gpus(hw)))
+                if md.get("hy4"):
+                    row = s.hy4_fit_row(model, ram, s.engine_gpus(hw))
+                    fit = None if row is None else ("may run slower" if row["mode"] == "cross_tier_ssd" else "fits")
+            except ImportError:
+                vram_gb = max(
+                    (float(c.get("dedicated_gb") or 0.0) if c.get("uma") else float(c.get("vram_gb") or 0.0)
+                     for c in (s.engine_gpus(hw) or [])),
+                    default=0.0,
+                )
+                need_gb = md.get("ram_gb")
+                if need_gb is None:
+                    need_gb = md.get("download_gb")
+                if need_gb is not None:
+                    fit = "fits" if float(need_gb) <= float(ram) + vram_gb else "may run slower"
+        installed = s._layout().find_config(s.root, tag) is not None
         here = None                                     # the page's "already on this computer": the files whole, by the pinned sizes (a local folder: not asked)
         if not gguf_dir and not arc and s.setup_module() is not None:
             try:
@@ -2862,7 +3252,7 @@ class Tools:
             py = s.run_python()
             if not Path(py).exists():
                 raise ToolError("PolyStrata's Python environment (.venv) is missing: run the install again")
-            cmd = [py, str(s.root / "serve" / "server.py"), "--engine", "strata", "--config", str(cfg_path),
+            cmd = [py, str(s.src / "serve" / "server.py"), "--engine", "strata", "--config", str(cfg_path),
                    "--port", str(port)]
             if gpu is not None:
                 cmd += ["--gpu", str(gpu)]
@@ -2975,6 +3365,8 @@ class Tools:
             if not raw:
                 raise ToolError(f"{cfg.name} names no engine log")
             path = Path(raw)
+            if not path.is_absolute():
+                path = s.root / path
             if not s.allowed(path):
                 raise ToolError(f"{cfg.name}'s log {raw} is outside the PolyStrata folder and its data folder: not shown")
         if not path.exists():

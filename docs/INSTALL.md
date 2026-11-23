@@ -59,9 +59,7 @@ settings. Starting PolyStrata from Task Scheduler at logon needs two task settin
 ```
 
 The same questions, the same automatic install (it uses `sudo apt` for Python and, only if it has to compile, for
-the build tools), and the same start: `http://127.0.0.1:8080`. Later runs of `./setup.sh` (or
-`terminal/run-<model>.sh`) start the model directly; `./setup.sh --setup` installs another model or changes the
-settings. Other distributions, WSL and compiling: [details](DETAILS.md#linux). Nix: [SOURCE_INSTALL.md](SOURCE_INSTALL.md).
+the build tools), and the same start: `http://127.0.0.1:8080`. Later runs of `./setup.sh` (or `terminal/scripts/run-<model>.sh`, or `python terminal/polystrata.py start <name>`) start the model directly; `./setup.sh --setup` installs another model or changes the settings (`--no-scripts` skips writing per-model scripts). Other distributions, WSL and compiling: [details](DETAILS.md#linux). Nix: [SOURCE_INSTALL.md](SOURCE_INSTALL.md).
 
 ## AMD cards
 
@@ -126,6 +124,7 @@ The same models and the same server, from a terminal in the PolyStrata folder:
 
 ```
 python polystrata.py --list-models                 the installed models, and which one is in memory
+python polystrata.py start <name>                  start an installed model's server directly (no script needed)
 python polystrata.py --model <name>                chat with one; /model in the chat changes it
 python polystrata.py benchmark --model <name>      speeds, memory and cache figures, as a table (--json FILE too)
 ```
@@ -157,20 +156,20 @@ Since 0.2.19-poly.1 PolyStrata has a folder for each part (`engine/`, `terminal/
 is now in `terminal/`:
 
 - setup (`setup.py`), the server (`serve/`), `strata.py` and the Python environment (`.venv`)
-- what setup wrote for each model: `strata-<model>.json`, `run-<model>.bat` / `run-<model>.sh` and the log
+- what setup wrote for each model: `terminal/configs/strata-<model>.json`, `terminal/scripts/run-<model>.bat` / `.sh` and `terminal/logs/strata-<model>.log`
 - the engines setup installed (`engine/` is now `terminal/engine/`, `engine-poly/` is now `terminal/engine-poly/`), and
   `models/`, `packs/` and `mtp/` if they were inside the PolyStrata folder
 
 The first start or `UPDATE.bat` after the update moves these files once and changes the paths inside the run configs
-and run scripts. Files outside the PolyStrata folder (a llama-swap config, a service unit, your own scripts) are not
+and run scripts (flat files in `terminal/` can also be moved with `START-HERE.bat --migrate` or `strata models migrate`). Files outside the PolyStrata folder (a llama-swap config, a service unit, your own scripts) are not
 changed. If one of them calls these files, change the path:
 
 - setup: `python setup.py ...` becomes `terminal\.venv\Scripts\python terminal\setup.py ...` (Linux:
   `terminal/.venv/bin/python terminal/setup.py ...`), or run `START-HERE.bat` / `./setup.sh` with the same options.
 - the server: `serve/server.py --config strata-<model>.json` becomes
-  `terminal/serve/server.py --config terminal/strata-<model>.json`, run with the Python in `terminal/.venv`. For
+  `terminal/serve/server.py --config terminal/configs/strata-<model>.json` (older unmigrated `terminal/strata-<model>.json` still works), run with the Python in `terminal/.venv`. For
   llama-swap: [LLAMA_SWAP.md](LLAMA_SWAP.md).
-- a run config, run script or engine: it is in `terminal/` now.
+- a run config, run script or engine: it is under `terminal/` (`configs/`, `scripts/`, `logs/`) now.
 
 To go back to 0.1.45-poly.10 or older:
 
@@ -184,11 +183,14 @@ To go back to 0.1.45-poly.10 or older:
 
 ## Where things are stored
 
-- **How the model starts:** `strata-<model>.json` in the `terminal` folder of PolyStrata (context, GPUs, host, API key,
-  ...), written by setup; next to it `run-<model>.bat` / `.sh`, the log `strata-<model>.log` and, when shared settings
-  were saved (`POST /settings`), `strata-<model>.shared-settings.json`. Running setup again for the same model (another context, say)
+- **How the model starts:** `terminal/configs/strata-<model>.json` (context, GPUs, host, API key, ...), written by setup;
+  `terminal/scripts/run-<model>.bat` / `.sh` (unless `--no-scripts` was passed), the log
+  `terminal/logs/strata-<model>.log` and, when shared settings were saved (`POST /settings`),
+  `terminal/configs/strata-<model>.shared-settings.json`. Older unmigrated installs with flat files directly in
+  `terminal/` still work read-only and can be moved with `START-HERE.bat --migrate` (`./setup.sh --migrate`) or
+  `strata models migrate`. Running setup again for the same model (another context, say)
   rewrites the keys setup writes (`exe`, `args`, `port`, `gpu`, `host`, `api_key`, `vision`, ...) and keeps the
-  ones you added (`sampling`, `mcp_servers`, `mcp`, `cors_origins`, ...); the earlier file is kept as
+  ones you added (`sampling`, `mcp_servers`, `mcp`, `cors_origins`, ...); the earlier file is kept beside it as
   `strata-<model>.json.bak`. Engine options you added to `"args"` by hand are not carried over: setup names them, and
   you add them again.
 - **The model files** (`models/`, `packs/`, `mtp/`, 70-120 GB): in **`PolyStrata-data` next to the PolyStrata folder**, or

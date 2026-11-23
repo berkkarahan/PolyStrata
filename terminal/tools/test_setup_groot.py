@@ -149,7 +149,7 @@ class Main(unittest.TestCase):
                 file = setup.model_file(fam, quant, 1)
                 self.assertEqual(self.downloads, [fam["hf"] + file])
                 self.assertEqual(self.verified, [(file, *fam["sha256"][file])])
-                cfg = json.loads((self.t / f"strata-groot-{quant.lower()}.json").read_text())
+                cfg = json.loads((self.t / "configs" / f"strata-groot-{quant.lower()}.json").read_text())
                 self.assertEqual(cfg["model_name"], f"groot-19b-a3b-261023-{quant.lower()}")
                 self.assertEqual(Path(cfg["args"][cfg["args"].index("--model") + 1]).name, file)
                 self.assertNotIn("--draft-model", cfg["args"])

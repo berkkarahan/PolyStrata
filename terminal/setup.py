@@ -83,6 +83,7 @@ tls.install()      # #3722: HTTPS checks the server against the operating system
 from strata_control import atomic
 from strata_control import draft_layer
 from strata_control import engine_component
+from strata_control import layout
 from strata_control import sysinfo
 from strata_control.discovery import in_trash
 from strata_control import user_args
@@ -4645,9 +4646,21 @@ MOVE_MARK = "ram-budget-0217.done"      # in a folder of run configs: the move b
 
 def migrate_run_configs(folder) -> list:
     """The run configs (strata-*.json) of `folder` moved by migrate_ram_budget, each written whole through a temporary file, the earlier one kept as
-    <name>.bak.  Returns the names moved.  A file that cannot be read or written is skipped.  strata_cli/ram_budget_move.py calls it once per folder."""
+    <name>.bak.  Returns the names moved.  A file or `configs/` symlink, or one that cannot be read or written, is skipped.  strata_cli/ram_budget_move.py calls it once per folder."""
+    folder = Path(folder)
+    if not folder.is_dir():
+        return []
+    cands = []
+    cfg_dir = layout.configs_dir(folder)
+    if cfg_dir.is_dir() and not cfg_dir.is_symlink():
+        cands.extend(p for p in cfg_dir.iterdir() if layout.is_config_file(p) and not p.is_symlink() and not p.is_dir())
+    seen = {p.name.lower() for p in cands}
+    for p in folder.iterdir():
+        if layout.is_config_file(p) and not p.is_symlink() and not p.is_dir() and p.name.lower() not in seen:
+            cands.append(p)
+            seen.add(p.name.lower())
     moved = []
-    for path in sorted(model_config_files(Path(folder))):
+    for path in sorted(cands):
         try:
             old = json.loads(path.read_text(encoding="utf-8-sig"))
         except (OSError, ValueError):
@@ -4655,14 +4668,16 @@ def migrate_run_configs(folder) -> list:
         new = migrate_ram_budget(old) if isinstance(old, dict) else None
         if new is None:
             continue
+        tmp = path.with_name(path.name + ".tmp")
         try:
             shutil.copyfile(path, path.with_name(path.name + ".bak"))
-            tmp = path.with_name(path.name + ".tmp")
             tmp.write_text(json.dumps(new, indent=1), encoding="utf-8")
             atomic.replace(tmp, path)
             moved.append(path.name)
         except OSError:
             continue
+        finally:
+            tmp.unlink(missing_ok=True)
     return moved
 
 
@@ -8266,10 +8281,15 @@ def data_folder_in_place() -> tuple:
 def write_config(path: Path, cfg: dict):
     """A run config, written whole or not at all (#459): to a temporary file first, then moved over the old one, so
     a setup stopped half-way (a closed window, a full disk) never leaves an empty strata-*.json behind."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(cfg, indent=1), encoding="utf-8")
-    atomic.replace(tmp, path)
-    _RUN_CONFIGS.append(Path(path))
+    try:
+        tmp.write_text(json.dumps(cfg, indent=1), encoding="utf-8")
+        atomic.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+    _RUN_CONFIGS.append(path)
 
 
 # #629: the run config's keys setup writes itself (and rewrites on every setup run); any other key is the user's - a
@@ -8465,9 +8485,17 @@ def write_setup_config(cfg_path: Path, cfg: dict, source: Path | None = None, ex
     to it: the keys setup does not write are carried over (carry_over), and the earlier file is kept as
     strata-<model>.json.bak when it changes.  `source`: an earlier install's config to carry the keys over from when
     this folder has none yet (a copy set up like the last one).  A line says what was kept, one what was not."""
+    cfg_path = Path(cfg_path)
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
     if SHAPE_ENGINE.get("title") and SHAPE_ENGINE.get("shape") and cfg.get("exe") == engine_component.REFERENCE_PREFIX + "strata-" + SHAPE_ENGINE["shape"].replace("_", "-"):
         cfg["shape_title"] = SHAPE_ENGINE["title"]                  # the engine's refusal at a start names the model, not the geometry (strata_control/shape_engine.py)
-    old_path = cfg_path if cfg_path.is_file() else source
+    legacy_cfg = None
+    if not cfg_path.is_file() and layout.is_config_file(cfg_path):
+        try:
+            legacy_cfg = layout.find_config(layout.install_home_for_config(cfg_path), layout.tag_from_config(cfg_path))
+        except ValueError:
+            legacy_cfg = None
+    old_path = cfg_path if cfg_path.is_file() else (legacy_cfg or source)
     old = None
     if old_path is not None and old_path.is_file():
         try:
@@ -8519,9 +8547,10 @@ def readable_config(path: Path) -> bool:
 
 
 def model_config_files(folder: Path) -> list:
-    """#346: the strata-*.json files of a folder that can be model configs. The server keeps a config's settings
-    next to it as strata-<model>.shared-settings.json: it matches the pattern but is no config (no exe, no args)."""
-    return [p for p in folder.glob("strata-*.json") if not p.name.endswith(".shared-settings.json")]
+    """#346: the strata-*.json files of a folder (configs/ first, then legacy root) that can be model configs.
+    The server keeps a config's settings next to it as strata-<model>.shared-settings.json: it matches the pattern
+    but is no config (no exe, no args)."""
+    return layout.iter_config_files(Path(folder))
 
 
 def previous_config(elsewhere_first: list, settings: dict):
@@ -9188,61 +9217,52 @@ TERMINAL_ENTRIES = ("strata.py", "setup.py", "serve", "strata_cli", "strata_cont
 
 
 def move_over_old_layout() -> list:
-    """MAP-0215 Q7: the first run of a clone after its pull to the 0.2.16 layout carries setup's state from the clone's root into
-    terminal/, once: the run configs, logs and run scripts, the model and pack folders, the MCP state, and the engine that setup put
-    in engine/ (which is the engine's source folder now; its source entries stay).  The paths inside the moved run configs and run
-    scripts are changed to the new places.  Nothing is moved when terminal/ has a run config of its own, and nothing is replaced.
-    START-HERE.bat / setup.sh move .venv before Python starts.  Returns the (old, new) pairs moved."""
-    old = ROOT.parent
-    if ROOT.name != "terminal" or not (old / "engine" / "CMakeLists.txt").is_file() or any(ROOT.glob("strata-*.json")):
+    """MAP-0215 Q7 + R4: the first run of a clone after its pull to the 0.2.16+ layout carries setup's state from the clone's
+    root into terminal/ (with per-model configs/sidecars, logs and run-* scripts placed into configs/, logs/ and scripts/
+    under home()), once: the run configs, logs and run scripts, the model and pack folders, the MCP state, and the engine
+    that setup put in engine/ (which is the engine's source folder now; its source entries stay).  The paths inside the
+    moved run configs and run scripts are changed to the new places.  Nothing is moved when home() has a run config of
+    its own, and nothing is replaced.  START-HERE.bat / setup.sh move .venv before Python starts.  Returns the (old, new)
+    pairs moved."""
+    if CONTROL:
         return []
-    pairs = []
-    for pat in OLD_LAYOUT_FILES:
-        pairs += [(f, ROOT / f.name) for f in sorted(old.glob(pat)) if f.is_file()]
-    pairs += [(old / d, ROOT / d) for d in OLD_LAYOUT_DIRS if (old / d).is_dir()]
+    old = ROOT.parent
+    dst_home = home()
+    if ROOT.name != "terminal" or not (old / "engine" / "CMakeLists.txt").is_file() or layout.iter_config_files(dst_home):
+        return []
+    pairs = [(f, ROOT / f.name) for f in sorted(old.glob("build-strata*.bat")) if f.is_file() and not f.is_symlink()]
+    pairs += [(old / d, ROOT / d) for d in OLD_LAYOUT_DIRS if not (old / d).is_symlink() and (old / d).is_dir()]
     eng = old / "engine"
-    if not (ROOT / "engine").exists():
+    if not (ROOT / "engine").exists() and not (ROOT / "engine").is_symlink():
         pairs += [(e, ROOT / "engine" / e.name) for e in sorted(eng.iterdir())
-                  if e.name not in ENGINE_SOURCE_ENTRIES and not e.name.startswith(("build", "."))]
-    moved = []
+                  if e.name not in ENGINE_SOURCE_ENTRIES and not e.name.startswith(("build", ".")) and not e.is_symlink()]
+    moved_other = []
     for src, dst in pairs:
-        if dst.exists():
+        if dst.exists() or dst.is_symlink() or dst.parent.is_symlink():
             continue
         try:
             dst.parent.mkdir(parents=True, exist_ok=True)
             # a rename only, never a copy: models/ and packs/ hold hundreds of GB. A rename that fails (another disk, files in use)
             # leaves the entry where it is, with the warning; the old place keeps working for the files a config names.
             os.rename(src, dst)
-            moved.append((src, dst))
+            moved_other.append((src, dst))
         except OSError as e:
             warn(f"{src} could not be moved to {dst}: {e}")
+    extra_swaps = (
+        list(moved_other)
+        + [(old / n, ROOT / n) for n in TERMINAL_ENTRIES]
+        + ([(eng, ROOT / "engine")] if any(a.parent == eng for a, _ in moved_other) else [])
+    )
+    mig = layout.migrate_legacy_layout(
+        dst_home,
+        source_dir=old,
+        extra_swaps=extra_swaps,
+        exact_swaps=[(old, ROOT)],
+        warn=warn,
+    )
+    moved = mig["moved"] + moved_other
     if not moved:
         return []
-    swaps = sorted({(str(a), str(b)) for a, b in moved} | {(str(old / n), str(ROOT / n)) for n in TERMINAL_ENTRIES}
-                   | ({(str(eng), str(ROOT / "engine"))} if any(a.parent == eng for a, _ in moved) else set()),
-                   key=lambda ab: -len(ab[0]))
-
-    def rebase(text: str) -> str:
-        for a, b in swaps:
-            for sa, sb in ((a, b), (a.replace("\\", "/"), b.replace("\\", "/"))):
-                text = re.sub(re.escape(sa) + r"(?=$|[\\/\"'\s;,])", lambda _m, sb=sb: sb, text)
-        return text
-
-    def walk(v):
-        return rebase(v) if isinstance(v, str) else [walk(x) for x in v] if isinstance(v, list) else \
-            {k: walk(x) for k, x in v.items()} if isinstance(v, dict) else v
-    for _, dst in moved:
-        if dst.is_file() and dst.name.startswith("strata-") and dst.suffix == ".json":
-            try:
-                data = json.loads(dst.read_text(encoding="utf-8-sig"))
-                dst.write_text(json.dumps(walk(data), indent=2) + "\n", encoding="utf-8")
-            except (OSError, ValueError) as e:
-                warn(f"{dst}: the paths in it could not be updated: {e}")
-        elif dst.is_file() and dst.name.startswith("run-"):
-            try:
-                dst.write_bytes(rebase(dst.read_bytes().decode("utf-8", "surrogateescape")).encode("utf-8", "surrogateescape"))
-            except OSError as e:
-                warn(f"{dst}: the paths in it could not be updated: {e}")
     say(f"  PolyStrata's folders were rearranged in this version: your settings and engine moved from {old} into {ROOT}.")
     return moved
 
@@ -10008,18 +10028,18 @@ def use_cuda12(cards, cfg_path: Path, cfg: dict, yes: bool) -> dict:
 
 
 def write_run_script(model, cfg_path, port, open_browser=True):
-    """run-<model>.bat / .sh: the server with this config; `--open` (the Monitor page) only when `open_browser` is True (--browser)."""
+    """scripts/run-<model>.bat / .sh: the server with this config; `--open` (the Monitor page) only when `open_browser` is True (--browser)."""
     serve = [sys.executable, str(ROOT / "serve" / "server.py"), "--engine", "strata", "--config", str(cfg_path),
              "--port", str(port)] + (["--open"] if open_browser else [])
+    script = layout.script_path(home(), model, windows=WIN)
+    script.parent.mkdir(parents=True, exist_ok=True)
     if WIN:
-        script = home() / f"run-{model.lower()}.bat"
         script.write_bytes(("@echo off\r\ntitle PolyStrata " + model + "\r\ncd /d \"" + str(ROOT) + "\"\r\n" +
                             " ".join(f'"{x}"' for x in serve) + "\r\nif errorlevel 1 pause\r\n").encode("utf-8"))
         # bytes, not text: the \r\n is written here, and text mode on Windows would turn each one into \r\r\n (#1939)
     else:
-        script = home() / f"run-{model.lower()}.sh"
         script.write_text("#!/bin/sh\ncd \"" + str(ROOT) + "\"\nexec " + " ".join(f'"{x}"' for x in serve) + "\n",
-                          encoding="utf-8")
+                          encoding="utf-8", newline="\n")
         script.chmod(0o755)
     return script
 
@@ -10483,7 +10503,7 @@ def update_poly_engine(cfg: dict, yes=False, cfg_path: Path | None = None) -> No
             if renamed:
                 cfg["exe"] = str(eng / POLY_EXE)
                 if cfg_path is not None:
-                    cfg_path.write_text(json.dumps(cfg, indent=1), encoding="utf-8")
+                    write_config(cfg_path, cfg)
             return
         picks = cfg["gpu"] if isinstance(cfg.get("gpu"), list) else [cfg["gpu"] if isinstance(cfg.get("gpu"), int) else None]
         gpu = gpu_info(picks[0])
@@ -10509,7 +10529,7 @@ def update_poly_engine(cfg: dict, yes=False, cfg_path: Path | None = None) -> No
         if changed:
             cfg["exe"] = str(eng / POLY_EXE)
             if cfg_path is not None:
-                cfg_path.write_text(json.dumps(cfg, indent=1), encoding="utf-8")
+                write_config(cfg_path, cfg)
         if renamed:
             ok(f"this install's engine is {POLY_EXE} now (it was {OLD_POLY_EXE}); {OLD_ENGINE_POLY_DIR}/ can be deleted")
     except (Exception, SystemExit) as e:
@@ -10691,13 +10711,14 @@ def poly_setup(a, family, gpu, hip, cuda_tk, multi, ram, data, elsewhere, port, 
     ok(f"context: {ctx} tokens")
 
     # the conversation cache: asked once, then kept as the model's run config has it
-    cfg_path = ROOT / f"strata-{tag.lower()}.json"
+    cfg_path = layout.config_path(home(), tag)
+    existing_cfg = layout.find_config(home(), tag)
     # the attention caches' format (issue 183): --kv when this model has that one, else what its run config had;
     # --kv fp16 goes back to the default
-    kv = a.kv or poly_saved_kv([cfg_path, adopted if adopted is not None and adopted.name == cfg_path.name else None])
+    kv = a.kv or poly_saved_kv([cfg_path, existing_cfg, adopted if adopted is not None and adopted.name == cfg_path.name else None])
     if family not in POLY_KV.get(kv, ()):
         kv = None
-    conv = poly_saved_conv([cfg_path, adopted if adopted is not None and adopted.name == cfg_path.name else None])
+    conv = poly_saved_conv([cfg_path, existing_cfg, adopted if adopted is not None and adopted.name == cfg_path.name else None])
     if conv is None:
         say()
         say("  Conversation cache: a coding agent sends several conversations in turn (the main one, its subagents,")
@@ -10900,7 +10921,7 @@ def poly_setup(a, family, gpu, hip, cuda_tk, multi, ram, data, elsewhere, port, 
     cfg = {"exe": str(eng / POLY_EXE), "args": args, "cwd": str(ROOT), "tokenizer": str(pack / "tokenizer"),
            "model_name": base.lower() if base else f"{fam['name']}-{model.lower()}",
            "display_name": base if base else f"{title} {model}",
-           "log": str(ROOT / f"strata-{tag.lower()}.log"), "lib_dirs": lib_dirs, "port": port}
+           "log": str(layout.log_path(home(), tag)), "lib_dirs": lib_dirs, "port": port}
     if fam.get("tool_call_recovery"):
         cfg["tool_call_recovery"] = True
         ok("its tool calls are JSON inside the wrapper: they are read with the recovery (tool_call_recovery in the "
@@ -10927,7 +10948,7 @@ def poly_setup(a, family, gpu, hip, cuda_tk, multi, ram, data, elsewhere, port, 
     earlier = adopted if adopted is not None and adopted.name == cfg_path.name else None
     if vision != "none":
         # the most rows a picture becomes: one of this engine's prompt batches (1,024) holds a picture of Gemma 4's
-        vt = vision_tokens(a.vision_tokens, vision, cfg_path if cfg_path.is_file() else earlier)
+        vt = vision_tokens(a.vision_tokens, vision, cfg_path if cfg_path.is_file() else (existing_cfg or earlier))
         if vt > fam.get("vision_most", vt):
             warn(f"--vision-tokens {vt}: {title} reads a picture in one prompt batch, {fam['vision_most']} tokens "
                  "unless the engine is started with a larger --prompt-batch; a picture with more is refused")
@@ -10950,8 +10971,9 @@ def poly_setup(a, family, gpu, hip, cuda_tk, multi, ram, data, elsewhere, port, 
     poly_kv_whole(cfg)
     warm_start_into(cfg, a)
     write_setup_config(cfg_path, cfg, earlier)
-    script = write_run_script(tag, cfg_path, port, cfg.get("open_browser") is True)
-    ok(f"start script: {script.name}")
+    script = None if getattr(a, "no_scripts", False) else write_run_script(tag, cfg_path, port, cfg.get("open_browser") is True)
+    if script is not None:
+        ok(f"start script: {script.name}")
 
     say()
     say("All set.")
@@ -10962,7 +10984,8 @@ def poly_setup(a, family, gpu, hip, cuda_tk, multi, ram, data, elsewhere, port, 
     if a.host and a.host not in ("127.0.0.1", "localhost"):
         say(f"  Other devices:    the server window prints this PC's address (http://<IP>:{port}/)"
             + ("" if a.api_key else " - no API key set: anyone on your network can use it"))
-    say(f"  Next time:        just run {'START-HERE.bat' if WIN else './setup.sh'} (or {script.name}) - it starts right away")
+    hint = f" (or {script.name})" if script is not None else f" (or python polystrata.py --model {tag.lower()})"
+    say(f"  Next time:        just run {'START-HERE.bat' if WIN else './setup.sh'}{hint} - it starts right away")
     if a.no_start:
         return 0
     return start(cfg_path, port)
@@ -11102,7 +11125,7 @@ def intel_control_setup(a) -> int:
     step(3, "writing the run settings")
     notes: list = []
     cfg, problems = adopt.plan(family=family, model=model, model_dir=model_dir, data_dir=data, src=ROOT, context=a.context or 32768, kv=a.kv,
-                               model_name=f"{fam.get('name', family)}-{model.lower()}", family_def=fam, log=home() / f"strata-{tag.lower()}.log",
+                               model_name=f"{fam.get('name', family)}-{model.lower()}", family_def=fam, log=layout.log_path(home(), tag),
                                backend="sycl", vram_gb=vram, notes=notes, pack_name=tag.lower())
     if cfg is None:
         fail("PolyStrata cannot start this model on the Intel Arc card yet: " + "; ".join(problems))
@@ -11132,7 +11155,7 @@ def intel_control_setup(a) -> int:
         cfg["api_key"] = a.api_key
     if a.browser is not None:
         cfg["open_browser"] = a.browser
-    cfg_path = home() / f"strata-{tag.lower()}.json"
+    cfg_path = layout.config_path(home(), tag)
     write_setup_config(cfg_path, cfg)
     for n in notes:
         say("  " + n)
@@ -11680,7 +11703,7 @@ def install_own_path(a, family, gpu, hip, amd, cuda_tk, multi, port, ram, adopte
         ok(f"VRAM kept free for other programs: about {a.vram_reserve_mib} MiB (the experts' share is set lower)")
     cfg = {"exe": engine_exe(eng), "args": args, "cwd": str(ROOT), "tokenizer": str(pack / "tokenizer"),
            "model_name": f"{fam['name']}-{model.lower()}", "arch": fam["arch"],
-           "log": str(home() / f"strata-{tag.lower()}.log"), "lib_dirs": lib_dirs, "port": port}
+           "log": str(layout.log_path(home(), tag)), "lib_dirs": lib_dirs, "port": port}
     if cuda_tk == 12:
         cfg["cuda"] = 12
     if hip:
@@ -11697,9 +11720,9 @@ def install_own_path(a, family, gpu, hip, amd, cuda_tk, multi, port, ram, adopte
     cfg["args"] = recommend_pool_workers(cfg["args"])   # --pool-workers: this engine path's CPU expert threads too
     for line in pool_workers_note(cfg["args"]):
         warn(line)
-    cfg_path = home() / f"strata-{tag.lower()}.json"
+    cfg_path = layout.config_path(home(), tag)
     if vision != "none":
-        old_cfg = cfg_path if cfg_path.is_file() else adopted
+        old_cfg = layout.find_config(home(), tag) or adopted
         vt = vision_tokens(getattr(a, "vision_tokens", None), vision, old_cfg)
         cfg["args"].append("--vision")
         cfg["vision"] = {"exe": str(eng / VEXE), "mmproj": str(mmproj), "model": str(gguf), "gpu": vision == "gpu",
@@ -11722,13 +11745,15 @@ def install_own_path(a, family, gpu, hip, amd, cuda_tk, multi, port, ram, adopte
             ok("parallel requests: one at a time (--parallel 1)")
     warm_start_into(cfg, a)
     write_setup_config(cfg_path, cfg, adopted if adopted is not None and adopted.name == cfg_path.name else None, explicit_args(a))
-    script = write_run_script(tag, cfg_path, port, cfg.get("open_browser") is True)
-    ok(f"start script: {script.name}")
+    script = None if getattr(a, "no_scripts", False) else write_run_script(tag, cfg_path, port, cfg.get("open_browser") is True)
+    if script is not None:
+        ok(f"start script: {script.name}")
     say()
     say("All set.")
     say(f"  API (OpenAI):     http://127.0.0.1:{port}/v1   (any API key; model name: anything)")
     say(f"  API (Anthropic):  http://127.0.0.1:{port}/v1/messages")
-    say(f"  Next time:        just run {'START-HERE.bat' if WIN else './setup.sh'} (or {script.name}) - it starts right away")
+    hint = f" (or {script.name})" if script is not None else f" (or python polystrata.py --model {tag.lower()})"
+    say(f"  Next time:        just run {'START-HERE.bat' if WIN else './setup.sh'}{hint} - it starts right away")
     if vision != "none":
         say("  Images:           send them over the API (your app) or in chat.py (/image <path>)")
     if par is None and not par_said:                   # the opt-in, said once (nothing changes)
@@ -12060,7 +12085,7 @@ def install_hy4_flash(a, family, gpu, hip, amd, cuda_tk, multi, port, ram, adopt
     if not unified:                                    # a card: the rank-cut plan (hy4_fit) as the engine's caps; one pool: the engine puts everything in it
         args += ["--vram-experts-gb", f"{placed['vram_gb']:.2f}", "--ram-experts-gb", f"{placed['ram_gb']:.2f}"]
     cfg = {"exe": engine_exe(eng), "args": args, "cwd": str(ROOT), "tokenizer": str(tokdir), "model_name": f"{fam['name']}-{model.lower()}", "arch": fam["arch"],
-           "log": str(home() / f"strata-{tag.lower()}.log"), "lib_dirs": lib_dirs, "port": port, "drafting": hy4_family.DEFAULT_DRAFTER}
+           "log": str(layout.log_path(home(), tag)), "lib_dirs": lib_dirs, "port": port, "drafting": hy4_family.DEFAULT_DRAFTER}
     if use_layer_split:
         cfg["layer_split"] = "auto"
     if hip:
@@ -12087,15 +12112,17 @@ def install_hy4_flash(a, family, gpu, hip, amd, cuda_tk, multi, port, ram, adopt
         cfg["api_key"] = a.api_key
     if a.browser is not None:
         cfg["open_browser"] = a.browser
-    cfg_path = home() / f"strata-{tag.lower()}.json"
+    cfg_path = layout.config_path(home(), tag)
     write_setup_config(cfg_path, cfg, adopted if adopted is not None and adopted.name == cfg_path.name else None, explicit_args(a))
-    script = write_run_script(tag, cfg_path, port, cfg.get("open_browser") is True)
-    ok(f"start script: {script.name}")
+    script = None if getattr(a, "no_scripts", False) else write_run_script(tag, cfg_path, port, cfg.get("open_browser") is True)
+    if script is not None:
+        ok(f"start script: {script.name}")
     say()
     say("All set.")
     say(f"  API (OpenAI):     http://127.0.0.1:{port}/v1   (any API key; model name: anything)")
     say(f"  API (Anthropic):  http://127.0.0.1:{port}/v1/messages")
-    say(f"  Next time:        just run {'START-HERE.bat' if WIN else './setup.sh'} (or {script.name}) - it starts right away")
+    hint = f" (or {script.name})" if script is not None else f" (or python polystrata.py --model {tag.lower()})"
+    say(f"  Next time:        just run {'START-HERE.bat' if WIN else './setup.sh'}{hint} - it starts right away")
     if a.no_start:
         return 0
     return start(cfg_path, port)
@@ -12601,7 +12628,7 @@ def mac_control_setup(a) -> int:
         profile = neutral(profile, shards[0], pack, GGUFFile, say)
     args = MF.engine_args(pack, shards, rt, ctx, stream, ram, profile, model)     # Unsloth: --native the repacked file, --ple-gguf the table's shard
     cfg = {"exe": engine_exe(Path("engine")), "args": args, "cwd": str(ROOT), "tokenizer": str(pack / "tokenizer"),
-           "model_name": f"{fam['name']}-{model.lower()}", "log": str(home() / f"strata-{tag.lower()}.log"),
+           "model_name": f"{fam['name']}-{model.lower()}", "log": str(layout.log_path(home(), tag)),
            "lib_dirs": [], "port": port, "backend": "metal", "env": {"STRATA_METAL_STREAM": "1" if stream else "0"}}
     if a.host:
         cfg["host"] = a.host
@@ -12621,10 +12648,11 @@ def mac_control_setup(a) -> int:
                                                    "gpu": vision == "gpu", "max_tokens": vision_tokens(a.vision_tokens, vision, None)})
         if vision == "cpu":
             cfg["vision"]["threads"] = vision_threads()
-    cfg_path = home() / f"strata-{tag.lower()}.json"
+    cfg_path = layout.config_path(home(), tag)
     write_setup_config(cfg_path, cfg)
-    script = write_run_script(tag, cfg_path, port, cfg.get("open_browser") is True)
-    ok(f"start script: {script.name}")
+    script = None if getattr(a, "no_scripts", False) else write_run_script(tag, cfg_path, port, cfg.get("open_browser") is True)
+    if script is not None:
+        ok(f"start script: {script.name}")
     say()
     say("All set.")
     return 0
@@ -12775,6 +12803,10 @@ def main() -> int:
     ap.add_argument("--yes", action="store_true", help="accept the recommended answers")
     ap.add_argument("--setup", action="store_true", help="install another model or change settings")
     ap.add_argument("--no-start", action="store_true", help="install only, do not start the model")
+    ap.add_argument("--no-scripts", action="store_true",
+                    help="do not write per-model run-<model>.bat / .sh startup scripts into scripts/")
+    ap.add_argument("--migrate", action="store_true",
+                    help="move flat strata-*.json, shared settings, logs and run-* scripts into configs/, logs/ and scripts/")
     ap.add_argument("--output", choices=("human", "jsonl"), default="human",
                     help="jsonl: one JSON object per line on stdout (step, ok, warning, progress, error, done) for a program that installs "
                          "a model; the usual text goes to stderr. Use it with --yes --no-start")
@@ -12869,6 +12901,17 @@ def main() -> int:
     if a.output == "jsonl":
         jsonl_start()
     move_over_old_layout()                             # a clone's first run after its pull to the 0.2.16 layout (Q7)
+    if a.migrate:
+        res = layout.migrate_legacy_layout(home(), warn=warn)
+        if res["moved"]:
+            ok(f"migrated {len(res['moved'])} item(s) into configs/, logs/ and scripts/ under {home()}")
+        else:
+            say(f"  Nothing to migrate under {home()}.")
+        if res["skipped"]:
+            say(f"  Skipped {len(res['skipped'])} item(s) (already present or symlink).")
+        if res["profiles_updated"]:
+            say(f"  Updated {len(res['profiles_updated'])} saved profile(s).")
+        return 1 if res["errors"] else 0
     if a.update:                                       # Q6: the newest code first (UPDATE.bat / update.sh did the git pull before 0.2.16)
         pulled = update_pull(sys.argv[1:])
         if pulled is not None:
@@ -13788,7 +13831,7 @@ def main() -> int:
         ok("the draft layer (MTP) is off: its ~5 GB are not downloaded (`--mtp on` fetches it later)")   # round 8, N3
     elif getattr(a, "drafter", None) == "dflash2" and not (rt / "experts.bin").exists():
         ok("DFlash2 is the drafter: the MTP draft layer's ~5 GB are not downloaded (choosing the MTP later fetches it once)")
-        provide_dflash2_vocab(data, a.draft_vocab or saved_draft_vocab(home() / f"strata-{tag.lower()}.json") or "cjk")
+        provide_dflash2_vocab(data, a.draft_vocab or saved_draft_vocab(layout.find_config(home(), tag) or layout.config_path(home(), tag)) or "cjk")
     elif corrupt or not (rt / "experts.bin").exists():
         say("  The MTP draft layer (speculative decoding, ~2x faster output) comes from the original Qwen checkpoint:")
         say("  only its ~5 GB of MTP tensors are downloaded.")
@@ -13798,7 +13841,7 @@ def main() -> int:
             run([sys.executable, str(ROOT / "tools" / "mtp_rt.py"), "--gguf", str(mtp / "mtp-q2_0.gguf"), "--out", str(rt)],
                 env=env)
     # a setup run again without --draft-vocab keeps the subset this model's config chose before (cyrillic, fr, en)
-    draft_vocab = a.draft_vocab or saved_draft_vocab(home() / f"strata-{tag.lower()}.json")
+    draft_vocab = a.draft_vocab or saved_draft_vocab(layout.find_config(home(), tag) or layout.config_path(home(), tag))
     if (rt / "experts.bin").exists():
         refresh_draft_vocab(rt, draft_vocab or "cjk")
         ok(f"MTP draft layer: {rt}")
@@ -13829,14 +13872,15 @@ def main() -> int:
     warm_start_into(cfg, a)
     write_setup_config(cfg_path, cfg, adopted if adopted is not None and adopted.name == cfg_path.name else None, explicit_args(a),
                        after_carry=(lambda c: uma_cache_guard(c, model, gpu)) if gpu.get("uma") else None)
-    script = write_run_script(tag, cfg_path, port, cfg.get("open_browser") is True)
+    script = None if getattr(a, "no_scripts", False) else write_run_script(tag, cfg_path, port, cfg.get("open_browser") is True)
     # offered only when someone answers: --yes installs and adopted earlier installs are not held up by it
     # P12: Skip is the default, as in the Terminal's first launch (T5): a person who presses Enter all the way does not wait 15-30 minutes
     if cal is None and not hip and not a.no_start and not a.yes and ask(TUNE_QUESTION.format(again=setup_command()), ["y", "n"], "n", a.yes, shown=TUNE_DEFAULT_SHOWN) == "y":
         tuned = calibrate_config(cfg_path)
     else:
         tuned = None                                   # not asked for: nothing to repeat below
-    ok(f"start script: {script.name}")
+    if script is not None:
+        ok(f"start script: {script.name}")
 
     say()
     say("All set.")
@@ -13845,7 +13889,8 @@ def main() -> int:
     if a.host and a.host not in ("127.0.0.1", "localhost"):
         say(f"  Other devices:    the server window prints this PC's address (http://<IP>:{port}/)"
             + ("" if a.api_key else " - no API key set: anyone on your network can use it"))
-    say(f"  Next time:        just run {'START-HERE.bat' if WIN else './setup.sh'} (or {script.name}) - it starts right away")
+    hint = f" (or {script.name})" if script is not None else f" (or python polystrata.py --model {tag.lower()})"
+    say(f"  Next time:        just run {'START-HERE.bat' if WIN else './setup.sh'}{hint} - it starts right away")
     if vision != "none":
         say("  Images:           send them over the API (your app) or in chat.py (/image <path>)")
     if cfg.get("images"):

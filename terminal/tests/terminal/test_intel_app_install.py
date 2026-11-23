@@ -208,7 +208,7 @@ class SetupControlMode(unittest.TestCase):
             data.mkdir()
             self.assertEqual(self.run_setup(self.args(folder), data, home, driver="i915"), 0)
             self.assertEqual(self.packed, str(data / "packs" / "q2_0"))
-            cfg = json.loads((home / "strata-q2_0.json").read_text(encoding="utf-8"))
+            cfg = json.loads((home / "configs" / "strata-q2_0.json").read_text(encoding="utf-8"))
         self.assertEqual((cfg["exe"], cfg["backend"], cfg["port"]), ("component:strata-engine", "sycl", 8080))
         a = cfg["args"]
         self.assertEqual(a[a.index("--pack") + 1], str(data / "packs" / "q2_0"))
@@ -227,7 +227,7 @@ class SetupControlMode(unittest.TestCase):
             home.mkdir()
             data.mkdir()
             self.run_setup(self.args(folder, port=8123), data, home, driver="xe")
-            cfg = json.loads((home / "strata-q2_0.json").read_text(encoding="utf-8"))
+            cfg = json.loads((home / "configs" / "strata-q2_0.json").read_text(encoding="utf-8"))
         self.assertIn("--stream-experts", cfg["args"])
         self.assertEqual(cfg["port"], 8123)
 

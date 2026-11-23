@@ -21,10 +21,12 @@ Read a server, watch it and start one:
 strata status --url http://127.0.0.1:8095
 strata status --url http://127.0.0.1:8095 --json
 strata monitor --url http://127.0.0.1:8095 --once
-strata serve --profile path/to/strata-model.json --port 8095
+strata serve --profile configs/strata-model.json --port 8095
+strata serve --model MODEL_ID --port 8095
+strata run MODEL_ID
 ```
 
-Discover setup-written model run configs in an installation without loading the engine:
+Discover setup-written model run configs in an installation without loading the engine, or migrate older flat files into `configs/`, `logs/` and `scripts/`:
 
 ```sh
 strata models list --installed --output json
@@ -32,9 +34,11 @@ strata models inspect MODEL_ID --output json
 strata models list --installed --install-dir /absolute/PolyStrata/install --output json
 strata models list --served --connection work --output json
 strata models import /absolute/path/to/GGUF-directory --plan --output json
+strata models migrate --dry-run
+strata models migrate
 ```
 
-Installed discovery scans only top-level `strata-*.json` files in the install folders it knows (the Terminal's own folder, the desktop app's install folder and folders earlier installs remembered; in a source checkout, the folder containing `strata.py`), or only in the existing absolute directory chosen by `--install-dir`/`STRATA_INSTALL_DIR`. It checks the local engine, tokenizer and referenced pack files using the same read-only component inventory as `doctor`. Invalid config candidates stay visible with an error. `models inspect` returns the component report and source-config SHA-256. `component_status: present` means required files exist, while `execution_compatibility: unverified` means model/backend support and real loading have not been proven.
+Installed discovery scans `configs/strata-*.json` first in the install folders it knows (the Terminal's own folder, the desktop app's install folder and folders earlier installs remembered; in a source checkout, the folder containing `strata.py`), then falls back read-only to legacy top-level `strata-*.json` files without duplicates, or scans only the existing absolute directory chosen by `--install-dir`/`STRATA_INSTALL_DIR`. Run `strata models migrate` (or `START-HERE.bat --migrate`) to move older flat files into `configs/`, `logs/` and `scripts/` without losing data. It checks the local engine, tokenizer and referenced pack files using the same read-only component inventory as `doctor`. Invalid config candidates stay visible with an error. `models inspect` returns the component report and source-config SHA-256. `component_status: present` means required files exist, while `execution_compatibility: unverified` means model/backend support and real loading have not been proven.
 
 `models list --served` uses the saved read-only connection and reports the **current server instance's** model ID and loaded state from telemetry. It is not a catalog of every installed or available model. `models import PATH --plan` inspects a local GGUF file or directory for bounded shard names, presence, regular files and GGUF v3 metadata. It checks for the expected `qwen4exp` architecture and `gpt2` tokenizer fields, and compares shard names with this checkout's known supported setup selections. It parses each bounded tensor directory, rejects payload extents past the end of a shard, and reports observed routed-expert encodings against the known variant's allowed encodings. An optional `mmproj` GGUF in the folder is listed as auxiliary and left untouched. A matching name produces a `setup_args_hint`, not a compatibility verdict: the preview does not read tensor payloads, hash entire files, verify provenance or test an engine load. Full artifact, model-pack, engine-version and hardware checks remain before actual adoption. No import, copy, download, repair or engine launch occurs in these inventory and preview commands.
 
@@ -57,7 +61,7 @@ strata logs --connection work --source runtime --follow --output jsonl
 Operator profiles are separate from setup's run config. Save one from an installed config, preview edits, and use its name for serving:
 
 ```sh
-strata profile create four-gpu --from-config path/to/strata-model.json
+strata profile create four-gpu --from-config configs/strata-model.json
 strata profile set four-gpu parallel=8 batch_groups=auto max_queue=32 queue_timeout=15 batch_telemetry=true --plan
 strata profile set four-gpu parallel=8 batch_groups=auto max_queue=32 queue_timeout=15 batch_telemetry=true
 strata profile show four-gpu --effective --output json

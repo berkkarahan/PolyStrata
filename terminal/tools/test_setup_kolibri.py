@@ -62,7 +62,7 @@ class Main(unittest.TestCase):
                 self.downloads, self.runs, self.verified = [], [], []
                 code, out, _ = self.main(family="kolibri", model=size, ram=64.0, vram=8188 / 1024)
                 self.assertEqual(code, 0, out)
-                cfg = json.loads((self.t / f"strata-kolibri1-{size.lower()}.json").read_text())
+                cfg = json.loads((self.t / "configs" / f"strata-kolibri1-{size.lower()}.json").read_text())
                 file = f"Kolibri-1-{size}.gguf"
                 self.assertEqual(self.downloads, [FAM["hf"] + file])
                 self.assertEqual(self.verified, [(file, *FAM["sha256"][file])])
@@ -84,7 +84,7 @@ class Main(unittest.TestCase):
             with self.subTest(ram=ram):
                 code, out, _ = self.main(family="kolibri", ram=ram, vram=8.0)
                 self.assertEqual(code, 0, out)
-                self.assertTrue((self.t / f"strata-kolibri1-{size.lower()}.json").is_file(), out)
+                self.assertTrue((self.t / "configs" / f"strata-kolibri1-{size.lower()}.json").is_file(), out)
 
     def test_windows_is_not_asked(self):
         code, out, _ = self.main(win=True, family="kolibri", ram=64.0, vram=31.84)

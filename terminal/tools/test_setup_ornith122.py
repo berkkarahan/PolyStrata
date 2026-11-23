@@ -335,7 +335,7 @@ class NonInteractiveInstallFlow(unittest.TestCase):
                 st.enter_context(p)
             code, out = quiet(setup.main)
 
-        cfg_path = self.t / "strata-ornith122-ud-q3_k_xl.json"
+        cfg_path = self.t / "configs" / "strata-ornith122-ud-q3_k_xl.json"
         cfg = json.loads(cfg_path.read_text(encoding="utf-8")) if cfg_path.exists() else None
         return code, out, cfg
 

@@ -12,10 +12,12 @@ write made through the handle (a child's too) and puts it at the end of the file
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 
 def open_append(path, encoding: str = "utf-8"):
     """A text file open for appending whose every write, also a child's through the inherited handle, lands at the end."""
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     if os.name != "nt":
         return open(path, "a", encoding=encoding)
     try:

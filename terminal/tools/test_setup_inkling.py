@@ -51,7 +51,7 @@ class Main(unittest.TestCase):
                 self.downloads, self.runs, self.verified = [], [], []
                 code, out, _ = self.main(family="inkling", model=size, ram=64.0, vram=32607 / 1024)
                 self.assertEqual(code, 0, out)
-                cfg = json.loads((self.t / f"strata-inkling-{size.lower()}.json").read_text())
+                cfg = json.loads((self.t / "configs" / f"strata-inkling-{size.lower()}.json").read_text())
                 file = f"Inkling-2-Mini-{size}.gguf"
                 self.assertEqual(self.downloads, [FAM["hf"] + file + "_file"])     # saved without the suffix
                 self.assertEqual(self.verified, [(file, *FAM["sha256"][file])])
@@ -69,7 +69,7 @@ class Main(unittest.TestCase):
         # an 8 GB card: Q5_0 attention, BF16 loop controllers, tail skip 4; expert swaps stay on (the default)
         code, out, _ = self.main(family="inkling", model="UD-Q3_K_XL", ram=32.0, vram=8188 / 1024)
         self.assertEqual(code, 0, out)
-        args = json.loads((self.t / "strata-inkling-ud-q3_k_xl.json").read_text())["args"]
+        args = json.loads((self.t / "configs" / "strata-inkling-ud-q3_k_xl.json").read_text())["args"]
         self.assertEqual(args[args.index("--attn-requant") + 1], "q5_0")
         self.assertIn("--loop-bf16", args)
         self.assertEqual(args[args.index("--tail-skip") + 1], "4")
@@ -98,7 +98,7 @@ class Main(unittest.TestCase):
     def test_requests_at_once_are_not_taken(self):
         code, out, _ = self.main(("--parallel", "4"), family="inkling", model="UD-Q3_K_XL", ram=64.0, vram=32607 / 1024)
         self.assertEqual(code, 0, out)
-        self.assertEqual(json.loads((self.t / "strata-inkling-ud-q3_k_xl.json").read_text())["parallel"], 1)
+        self.assertEqual(json.loads((self.t / "configs" / "strata-inkling-ud-q3_k_xl.json").read_text())["parallel"], 1)
         self.assertIn("answers one request at a time", out)
 
 

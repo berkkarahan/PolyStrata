@@ -326,7 +326,7 @@ def load_shared_settings(path, warn=print) -> dict:
     a whole (nothing in it can be trusted); a file that IS an object keeps every key the server understands, and each
     key it does not is named on one line and skipped."""
     try:
-        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+        doc = json.loads(Path(path).read_text(encoding="utf-8-sig"))
     except FileNotFoundError:
         return {}                   # no file yet: the normal case on a first start, nothing to report
     except (OSError, ValueError) as e:

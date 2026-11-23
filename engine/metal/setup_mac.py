@@ -36,6 +36,7 @@ ROOT = Path(__file__).resolve().parent.parent          # engine/
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT.parent / "terminal"))        # setup.py, strata_control and the tools are the Terminal's
 import setup as S  # noqa: E402
+from strata_control import layout  # noqa: E402
 from strata_control import mac_fit as _fit  # noqa: E402
 from strata_control.mac_fit import (  # noqa: E402,F401  (re-exported: the tests and callers use these names here)
     BIG_MAC_GB, CONTEXTS, GIB_GB, GPU_SHARE, MAC_ABOUT, MAC_MODELS, MIN_MACOS, OVERHEAD_GB, RECOMMENDED,
@@ -330,14 +331,14 @@ def experts_file(native: Path) -> None:
 
 
 def config_path(tag: str) -> Path:
-    """A model's run config: in setup.home() (terminal/), where setup.py writes the PC's and where the server, polystrata.py
-    and the next setup look for them, not beside this file in engine/."""
-    return S.home() / f"strata-{tag.lower()}.json"
+    """A model's run config: in setup.home()/configs/ (under terminal/), where setup.py writes the PC's and where
+    the server, polystrata.py and the next setup look for them, not beside this file in engine/."""
+    return layout.config_path(S.home(), tag)
 
 
 def mac_config(exe: Path, args: list, pack: Path, model_name: str, tag: str, port: int) -> dict:
     return {"exe": str(exe), "args": args, "cwd": str(ROOT), "tokenizer": str(pack / "tokenizer"),
-            "model_name": model_name, "log": str(S.home() / f"strata-{tag.lower()}.log"), "lib_dirs": [], "port": port,
+            "model_name": model_name, "log": str(layout.log_path(S.home(), tag)), "lib_dirs": [], "port": port,
             "backend": "metal"}
 
 
@@ -564,7 +565,7 @@ def setup_poly(a, info: dict, data: Path, elsewhere: list) -> int:
             cfg["vision"]["threads"] = info.get("perf_cores") or max(1, (os.cpu_count() or 8) // 2)
     S.poly_kv_whole(cfg)
     cfg_path = config_path(tag)
-    previous = P.read_config(cfg_path)
+    previous = P.read_config(layout.find_config(S.home(), tag) or cfg_path)
     P.apply_options(cfg["args"], a, previous)
     headers, why = P.read_headers([*files, *([draft] if draft else [])])
     if getattr(a, "poly_kv", None) == "q8_0" and (
@@ -579,8 +580,9 @@ def setup_poly(a, info: dict, data: Path, elsewhere: list) -> int:
     if P.flag_value(cfg["args"], "--metal-memory") == "balanced":
         S.say("  balanced KV grows in 4096-token steps with 1024 tokens ahead, up to the chosen context")
     S.write_setup_config(cfg_path, cfg)
-    script = S.write_run_script(tag, cfg_path, cfg["port"], cfg.get("open_browser") is True)
-    S.ok(f"start script: {script.name}")
+    if not getattr(a, "no_scripts", False):
+        script = S.write_run_script(tag, cfg_path, cfg["port"], cfg.get("open_browser") is True)
+        S.ok(f"start script: {script.name}")
     return 0 if a.no_start else start(cfg_path, a.port, a.browser is not False)
 
 
@@ -648,8 +650,9 @@ def setup_q36(a, info: dict, data: Path, elsewhere: list) -> int:
                          "model": str(gguf), "gpu": True, "max_tokens": a.vision_tokens or 1024}
     cfg_path = config_path(tag)
     S.write_setup_config(cfg_path, cfg)
-    script = S.write_run_script(tag, cfg_path, cfg["port"], cfg.get("open_browser") is True)
-    S.ok(f"start script: {script.name}")
+    if not getattr(a, "no_scripts", False):
+        script = S.write_run_script(tag, cfg_path, cfg["port"], cfg.get("open_browser") is True)
+        S.ok(f"start script: {script.name}")
     return 0 if a.no_start else start(cfg_path, a.port, a.browser is not False)
 
 
@@ -721,6 +724,8 @@ def main(argv=None) -> int:
                          "same as STRATA_SOURCE")
     ap.add_argument("--setup", action="store_true")
     ap.add_argument("--no-start", action="store_true")
+    ap.add_argument("--no-scripts", action="store_true",
+                    help="do not write per-model run-<model>.sh startup scripts into scripts/")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--update", action="store_true")
     ap.add_argument("--build", action="store_true", help="build the engine again even when it is current")
@@ -992,13 +997,15 @@ def main(argv=None) -> int:
         cfg["open_browser"] = a.browser
     cfg_path = config_path(tag)
     S.write_config(cfg_path, cfg)
-    script = S.write_run_script(tag, cfg_path, port, cfg.get("open_browser") is True)
-    S.ok(f"start script: {script.name}")
+    script = None if getattr(a, "no_scripts", False) else S.write_run_script(tag, cfg_path, port, cfg.get("open_browser") is True)
+    if script is not None:
+        S.ok(f"start script: {script.name}")
     S.say()
     S.say("All set.")
     S.say(f"  API (OpenAI):     http://127.0.0.1:{port}/v1")
     S.say(f"  API (Anthropic):  http://127.0.0.1:{port}/v1/messages")
-    S.say(f"  Next time:        just run ./setup.sh (or {script.name}) - it starts right away")
+    hint = f" (or {script.name})" if script is not None else f" (or python polystrata.py --model {tag.lower()})"
+    S.say(f"  Next time:        just run ./setup.sh{hint} - it starts right away")
     if a.no_start:
         return 0
     return start(cfg_path, port, a.browser is not False)

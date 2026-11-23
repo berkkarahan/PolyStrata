@@ -20,7 +20,8 @@ import setup  # noqa: E402
 class RunScriptNewlines(unittest.TestCase):
     def test_bat_has_single_crlf(self):
         with tempfile.TemporaryDirectory() as d:
-            with mock.patch.object(setup, "WIN", True), mock.patch.object(setup, "ROOT", Path(d)):
+            with mock.patch.object(setup, "WIN", True), mock.patch.object(setup, "ROOT", Path(d)), \
+                    mock.patch.object(setup, "_CONTROL_HOME", None):
                 script = setup.write_run_script("IQ3_XXS", Path(d) / "strata-iq3_xxs.json", 8080)
             data = script.read_bytes()
         self.assertNotIn(b"\r\r\n", data)

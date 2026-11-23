@@ -794,6 +794,9 @@ class CalibrateWithModel(unittest.TestCase):
             cfgs.append(p)
         tuned = []
         with mock.patch.object(sys, "argv", ["setup.py", *argv]), \
+                mock.patch.object(setup, "ROOT", Path(tmp.name)), \
+                mock.patch.object(setup, "_CONTROL_HOME", None), \
+                mock.patch.object(setup, "move_over_old_layout", return_value=[]), \
                 mock.patch.object(setup.sys, "platform", "win32" if setup.WIN else "linux"), \
                 mock.patch.object(setup, "installed_configs", lambda: cfgs), \
                 mock.patch.object(setup, "update_installed_engine", lambda *a, **k: None), \
@@ -882,6 +885,9 @@ class StartIgnoresSetupFlags(unittest.TestCase):
                                    "model_name": "iq3_xxs"}))
         started = []
         with mock.patch.object(sys, "argv", ["setup.py", *argv]), \
+                mock.patch.object(setup, "ROOT", Path(tmp.name)), \
+                mock.patch.object(setup, "_CONTROL_HOME", None), \
+                mock.patch.object(setup, "move_over_old_layout", return_value=[]), \
                 mock.patch.object(setup, "installed_configs", lambda: [cfg]), \
                 mock.patch.object(setup, "update_installed_engine", lambda *a, **k: None), \
                 mock.patch.object(setup, "start", lambda c, *a, **k: started.append(c.name) or 0), \

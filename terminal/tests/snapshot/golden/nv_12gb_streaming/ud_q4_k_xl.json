@@ -57,7 +57,7 @@
     "cwd": "<REPO>",
     "tokenizer": "<ROOT>/data/packs/ud_q4_k_xl/tokenizer",
     "model_name": "qwen3.8-flash-next-unsloth-ud-q4_k_xl",
-    "log": "<REPO>/strata-unsloth-ud-q4_k_xl.log",
+    "log": "<REPO>/logs/strata-unsloth-ud-q4_k_xl.log",
     "lib_dirs": [],
     "port": 8080,
     "ui_budget_work_gib": 39,

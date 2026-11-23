@@ -113,6 +113,8 @@ class Update(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p = self.config(Path(d))
             with mock.patch.object(sys, "argv", ["setup.py", "--update"]), \
+                    mock.patch.object(setup, "ROOT", Path(d)), \
+                    mock.patch.object(setup, "_CONTROL_HOME", None), \
                     mock.patch.object(setup, "data_folder", return_value=(Path(d), [])), \
                     mock.patch.object(setup, "installed_configs", return_value=[p]), \
                     mock.patch.object(setup, "update_pull", return_value=pulled) as pull, \

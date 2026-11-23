@@ -15,6 +15,8 @@ import json
 import sys
 from pathlib import Path
 
+from strata_control import layout
+
 BUDGET = "--resident-budget-gib"
 WORK_KEY = "ui_budget_work_gib"
 MARK = "ram-budget-0217.done"
@@ -25,18 +27,31 @@ def _folders() -> list[Path]:
     return [p for p, _src in models.all_installs()]
 
 
+def _cfg_needs_setup(path: Path) -> bool:
+    try:
+        if path.is_symlink():
+            return False
+        cfg = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeError, ValueError):
+        return False
+    return isinstance(cfg, dict) and isinstance(cfg.get("args"), list) and BUDGET in cfg["args"] and WORK_KEY not in cfg
+
+
+def _dir_needs_setup(directory: Path) -> bool:
+    try:
+        if not directory.is_dir():
+            return False
+        return any(_cfg_needs_setup(p) for p in directory.iterdir() if layout.is_config_file(p))
+    except OSError:
+        return False
+
+
 def _needs_setup(folder: Path) -> bool:
     """True when a config of the folder has a RAM budget and no second number: the only ones the move can change (stdlib only, no setup.py import)."""
-    for path in folder.glob("strata-*.json"):
-        if path.name.endswith(".shared-settings.json"):
-            continue
-        try:
-            cfg = json.loads(path.read_text(encoding="utf-8-sig"))
-        except (OSError, ValueError):
-            continue
-        if isinstance(cfg, dict) and isinstance(cfg.get("args"), list) and BUDGET in cfg["args"] and WORK_KEY not in cfg:
-            return True
-    return False
+    cfg_dir = layout.configs_dir(folder)
+    if cfg_dir.is_symlink():
+        return _dir_needs_setup(folder)
+    return any(_cfg_needs_setup(path) for path in layout.iter_config_files(folder))
 
 
 def _load_setup():
@@ -58,12 +73,23 @@ def run(folders=None, setup_module=None, say=None) -> dict:
     done: dict = {}
     for folder in (_folders() if folders is None else [Path(f) for f in folders]):
         try:
-            if not folder.is_dir() or (folder / MARK).exists():
+            cfg_dir = layout.configs_dir(folder)
+            if not folder.is_dir() or (folder / MARK).exists() or (cfg_dir / MARK).exists():
                 continue
-            moved = []
+            cfg_is_symlink = cfg_dir.is_symlink()
+            moved: list[str] = []
             if _needs_setup(folder):
-                moved = (setup_module or _load_setup()).migrate_run_configs(folder)
-            (folder / MARK).write_text("looked at by 0.2.17: the RAM budget setup wrote under the old rule is moved to the new one once (strata_cli/ram_budget_move.py)\n", encoding="utf-8")
+                mod = setup_module or _load_setup()
+                if _dir_needs_setup(folder):
+                    moved.extend(mod.migrate_run_configs(folder) or ())
+                if cfg_dir.is_dir() and not cfg_is_symlink and _dir_needs_setup(cfg_dir):
+                    for name in (mod.migrate_run_configs(cfg_dir) or ()):
+                        if name not in moved:
+                            moved.append(name)
+            blocked_symlink = cfg_is_symlink and _dir_needs_setup(cfg_dir)
+            if not blocked_symlink:
+                mark_dir = cfg_dir if (cfg_dir.is_dir() and not cfg_is_symlink) else folder
+                (mark_dir / MARK).write_text("looked at by 0.2.17: the RAM budget setup wrote under the old rule is moved to the new one once (strata_cli/ram_budget_move.py)\n", encoding="utf-8")
             done[str(folder)] = moved
             if moved:
                 say("strata: the RAM budget of " + ", ".join(moved) + " moved to the 0.2.17 rule (the RAM less 17 GB); the earlier file is kept as <name>.bak")

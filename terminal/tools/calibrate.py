@@ -242,7 +242,11 @@ def run(cfg: dict, say=print, start_engine=None, *, progress=None, cancel_event=
                         for k, v in cfg["vision"].items()}
                 if vcfg.get("elastic") is True and cfg.get("vram_elastic") is not True:
                     vcfg["elastic"] = False     # as serving: without "vram_elastic" the encoder starts with the model
-                log = resources.enter_context(open(cfg["log"], "a", encoding="utf-8")) if cfg.get("log") else None
+                if cfg.get("log"):
+                    Path(cfg["log"]).parent.mkdir(parents=True, exist_ok=True)
+                    log = resources.enter_context(open(cfg["log"], "a", encoding="utf-8"))
+                else:
+                    log = None
                 vision = Vision(vcfg, log=log, env=vision_env(cfg, env))
                 resources.callback(vision.shutdown)
 
@@ -546,5 +550,11 @@ def apply_env(env: dict | None, calibrated: dict | None) -> dict:
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         sys.exit("usage: calibrate.py <strata-*.json>")
-    res = run(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8-sig")))
+    target = Path(sys.argv[1])
+    if not target.is_file() and not target.is_absolute() and (ROOT / target).is_file():
+        target = ROOT / target
+    if not target.is_file():
+        from strata_control import layout
+        target = layout.resolve_config_ref(ROOT, sys.argv[1]) or target
+    res = run(json.loads(target.read_text(encoding="utf-8-sig")))
     print(json.dumps(res, indent=1))

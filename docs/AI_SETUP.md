@@ -134,6 +134,8 @@ The flags (all of them: `START-HERE.bat --help`):
 | `--port N` | the server port (default 8080) |
 | `--host H --api-key K` | listen beyond this PC; **only together with a key** |
 | `--no-start` | install only, do not start the server |
+| `--no-scripts` | install without writing per-model `run-*.bat` / `.sh` scripts |
+| `--migrate` | move older flat `strata-*.json`, settings, logs and scripts into `configs/`, `logs/` and `scripts/` |
 | `--setup` | install another model or change settings of an installed one |
 | `--check` | only check the PC |
 | `--update` | update the engine, the Python packages and the settings without starting the model |
@@ -166,17 +168,14 @@ Notes:
 
 ## 6. Start the server
 
-Setup writes a start script for the model into the `terminal` folder: `run-<model>.bat` on Windows and `run-<model>.sh`
-on Linux, with the model's name in lower case, for example `run-iq2_xs.bat`.
+Setup writes a start script for the model into `terminal\scripts\` (or `terminal/scripts/`): `run-<model>.bat` on Windows and `run-<model>.sh` on Linux, with the model's name in lower case, for example `run-iq2_xs.bat`. Pass `--no-scripts` to skip writing per-model scripts.
 
 ```
-Windows (PowerShell):  Start-Process -FilePath ".\terminal\run-iq2_xs.bat"            (opens its own window)
-Linux:                 nohup ./terminal/run-iq2_xs.sh > strata-server.out 2>&1 &
+Windows (PowerShell):  Start-Process -FilePath ".\terminal\scripts\run-iq2_xs.bat"    (opens its own window)
+Linux:                 nohup ./terminal/scripts/run-iq2_xs.sh > strata-server.out 2>&1 &
 ```
 
-Or `START-HERE.bat` / `./setup.sh` without flags, which starts the installed model. It asks which one when several are
-installed; add `--yes` to take the first. It opens no browser (`--browser` opens the
-Monitor page at `http://127.0.0.1:8080` when the model is ready). Closing its window (or stopping the process) stops the model.
+You can also start any configured model directly without a script via `terminal\.venv\Scripts\python terminal\polystrata.py start <name>` (or `terminal\strata.py run <model>`), or run `START-HERE.bat` / `./setup.sh` without flags. Setup asks which model when several are installed; add `--yes` to take the first. It opens no browser (`--browser` opens the Monitor page at `http://127.0.0.1:8080` when the model is ready). Closing its window (or stopping the process) stops the model.
 
 ## 7. Verify
 
@@ -194,7 +193,7 @@ curl http://127.0.0.1:8080/v1/chat/completions -H "Content-Type: application/jso
 ```
 
 With an API key, add `-H "Authorization: Bearer <key>"`. The server window prints a `ready:` line when it is ready. The
-engine log is `strata-<model>.log` in the `terminal` folder.
+engine log is `strata-<model>.log` in `terminal/logs/` (older unmigrated installs put it in `terminal/`).
 
 ## 8. Connect the user's apps
 
@@ -208,13 +207,13 @@ engine log is `strata-<model>.log` in the `terminal` folder.
   [DETAILS.md](DETAILS.md#the-responses-api-and-codex-cli)).
 - **Claude Code:** `ANTHROPIC_BASE_URL=http://127.0.0.1:8080`, `ANTHROPIC_MODEL` set to a Claude model name it knows
   (PolyStrata ignores the name), and any `ANTHROPIC_AUTH_TOKEN` (or the configured key). Add
-  `"anthropic_thinking": "on_request"` to the model's `strata-<model>.json` (in the `terminal` folder) and restart.
+  `"anthropic_thinking": "on_request"` to the model's `strata-<model>.json` (in `terminal/configs/`) and restart.
   Claude Code asks for 32,000 tokens of answer in every request, and the server shortens that to the room the context
   has left (`"fit_max_tokens"`, on by default since 0.2.17) ([why](FAQ.md#can-i-use-it-with-claude-code-codex-or-other-apps)).
 - **Thinking level:** `"reasoning_effort": "none" | "low" | "medium" | "high"`.
 - PolyStrata answers one request at a time by default. `--parallel N` lets up to N requests decode together (opt-in,
   [BATCHING.md](BATCHING.md)). API details: [DETAILS.md](DETAILS.md#using-it).
-- The terminal is `python polystrata.py --model <name>` in the PolyStrata folder ([INSTALL.md](INSTALL.md#the-terminal)).
+- The terminal launcher is `terminal\.venv\Scripts\python terminal\polystrata.py --model <name>` (or `start <name>`, `--list-models`; Linux: `terminal/.venv/bin/python terminal/polystrata.py`) ([INSTALL.md](INSTALL.md#the-terminal)).
 
 ## 9. When something fails
 
@@ -230,7 +229,7 @@ engine log is `strata-<model>.log` in the `terminal` folder.
 | Python or build tools could not be installed | Install what the message names, then rerun. |
 
 More: [TROUBLESHOOTING.md](TROUBLESHOOTING.md) and the [full table](DETAILS.md#troubleshooting). If it still fails,
-collect `strata-<model>.log` and the setup output, and open an issue at https://github.com/simplexai-labs/PolyStrata/issues.
+collect `terminal/logs/strata-<model>.log` and the setup output, and open an issue at https://github.com/simplexai-labs/PolyStrata/issues.
 
 ## Alternative: the MCP server
 

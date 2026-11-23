@@ -237,7 +237,11 @@ class UpdatePull(unittest.TestCase):
 
 class MainPullsFirst(unittest.TestCase):
     def test_main_runs_the_pull_before_anything_else_on_update(self):
-        with mock.patch.object(sys, "argv", ["setup.py", "--update"]), \
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(setup, "ROOT", Path(d)), \
+                mock.patch.object(setup, "_CONTROL_HOME", None), \
+                mock.patch.object(setup, "move_over_old_layout", return_value=[]), \
+                mock.patch.object(sys, "argv", ["setup.py", "--update"]), \
                 mock.patch.object(setup, "update_pull", return_value=7) as pull, \
                 mock.patch.object(setup, "installed_configs", side_effect=AssertionError("ran after the pull")):
             self.assertEqual(setup.main(), 7)

@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parent.parent          # engine/
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT.parent / "terminal"))        # setup.py, strata_control and serve are the Terminal's
 import setup as S  # noqa: E402
-from strata_control import intel_spec, vram_fit  # noqa: E402
+from strata_control import intel_spec, layout, vram_fit  # noqa: E402
 
 SYCL_WRAPPER = ROOT / "sycl" / "serve" / "strata-sycl.sh"
 SYCL_IMAGE = "strata-sycl-dev"
@@ -452,10 +452,12 @@ def install(argv) -> None:
     asked_ctx = any(a == "--context" or a.startswith("--context=") or a == "--max-context" for a in argv)
     asked_reserve = any(a == "--vram-reserve-mib" or a.startswith("--vram-reserve-mib=") for a in argv)
     keep = {}                                          # hand-set keys setup does not write: kept across a rerun
-    for p in ROOT.glob("strata-*.json"):
+    for p in [*layout.iter_config_files(S.home()), *ROOT.glob("strata-*.json")]:
+        if p.name.endswith(".shared-settings.json"):
+            continue
         try:
             c = json.loads(p.read_text(encoding="utf-8-sig"))
-            keep[p.name] = {k: c[k] for k in ("model_switcher", "sampling") if k in c}
+            keep.setdefault(p.name, {k: c[k] for k in ("model_switcher", "sampling") if k in c})
         except (OSError, ValueError):
             pass
     stub = READER_DIR                                   # setup reads the engine's BUILD.json; the SYCL build has none.  A folder that
@@ -521,10 +523,21 @@ def install(argv) -> None:
         return [t for t in bench_tips(args, env, real_ram, *a, **k) if "auto:32768" not in t]
     S.bench_tips = bench_tips_intel
 
-    write = S.write_run_script
+    def _model_entry(tag_name: str) -> tuple[str, dict]:
+        low = tag_name.lower()
+        for k, v in S.MODELS.items():
+            if k.lower() == low:
+                return k, v
+        for k, v in sorted(S.MODELS.items(), key=lambda kv: -len(kv[0])):
+            if low.endswith("-" + k.lower()):
+                return k, v
+        return tag_name, {}
 
-    def write_run_script(model, cfg_path, port, open_browser=True):   # setup.write_run_script's signature (#870)
-        cfg = json.loads(Path(cfg_path).read_text(encoding="utf-8"))
+    def _apply_sycl(cfg_path, model=None):
+        cfg_p = Path(cfg_path)
+        cfg = json.loads(cfg_p.read_text(encoding="utf-8-sig"))
+        raw_tag = model or (layout.tag_from_config(cfg_p) if layout.is_config_file(cfg_p) else cfg_p.stem[len("strata-"):])
+        tag, model_meta = _model_entry(raw_tag)
         # the card setup selected (--gpu / the first usable), not intel[0]: on a PC with two Arcs the config must match
         # the chosen one (docs/INTEL.md, "Two cards"). intel_gpus() lists them in sysfs card order and cfg["gpu"] is
         # that index (setup.py's amd path); a layer split writes a list, and then every listed card is used.
@@ -533,8 +546,8 @@ def install(argv) -> None:
         idx = gsel if isinstance(gsel, int) and 0 <= gsel < len(intel) else 0
         sel = intel[idx]
         fit_notes = []
-        cfg = to_sycl(cfg, exe, real_ram, keep.get(Path(cfg_path).name, {}), sel["vram_gb"], sel["driver"],
-                      sel.get("devid", ""), fit_notes=fit_notes, model=model, ctx_asked=asked_ctx,
+        cfg = to_sycl(cfg, exe, real_ram, keep.get(cfg_p.name, {}), sel["vram_gb"], sel["driver"],
+                      sel.get("devid", ""), fit_notes=fit_notes, model=tag, ctx_asked=asked_ctx,
                       auto_reserve=not asked_reserve, fit=not split)
         for line in fit_notes:                              # one plain line: what was chosen and why (never a refusal)
             S.say("  " + line)
@@ -550,10 +563,10 @@ def install(argv) -> None:
             # #1980: a later stage short of VRAM is refused under NO_HOST=1; with the host path on it runs (the host
             # computes those experts).  Only when the experts will likely not fit; a value the user set is kept.
             cards = [intel[i]["vram_gb"] for i in gsel if isinstance(i, int) and 0 <= i < len(intel)]
-            arena = S.MODELS.get(model, {}).get("arena_gb", 0)
+            arena = model_meta.get("arena_gb", 0)
             if split_likely_short(arena, cards) and "STRATA_VERIFY_NO_HOST" not in cfg["env"]:
                 cfg["env"]["STRATA_VERIFY_NO_HOST"] = "0"
-                S.say(f"  {model}'s {arena:.0f} GB of experts will likely not all fit the {len(cards)} cards' "
+                S.say(f"  {tag}'s {arena:.0f} GB of experts will likely not all fit the {len(cards)} cards' "
                       f"{sum(cards):.0f} GB of VRAM: the config sets STRATA_VERIFY_NO_HOST=0, so the CPU computes the "
                       "experts the later card does not hold instead of the start being refused (#1980). Set it to 1 "
                       "in the config's env if your cards hold everything; a smaller model fits fully (docs/INTEL_ARC.md)")
@@ -563,10 +576,10 @@ def install(argv) -> None:
             spec_note = intel_spec.apply_to_config(cfg, cards_used)
             if spec_note:
                 S.say("  " + spec_note)
-        need = S.MODELS.get(model, {}).get("ram_gb", 0)
+        need = model_meta.get("ram_gb", 0)
         sel_alch = sel["driver"] == "i915" or sel.get("devid") in ALCHEMIST_IDS
         if sel_alch and need and real_ram < need:
-            S.warn(f"{model} on this Arc computes the experts the card does not hold on the CPU (about {need} GB of "
+            S.warn(f"{tag} on this Arc computes the experts the card does not hold on the CPU (about {need} GB of "
                    f"weights; this PC has {real_ram:.0f} GB of RAM): the start will be slow or fail - a smaller model "
                    "(--model) fits better (docs/INTEL.md)")
         if flag(cfg["args"], "--prefill") == "8192":
@@ -574,19 +587,47 @@ def install(argv) -> None:
                                       sel.get("devid", ""))[1]
             if why:
                 S.say("  " + why)
-        Path(cfg_path).write_text(json.dumps(cfg, indent=1), encoding="utf-8")
+        cfg_p.parent.mkdir(parents=True, exist_ok=True)
+        S.write_config(cfg_p, cfg)
+
+    orig_write_setup_config = S.write_setup_config
+
+    def write_setup_config(cfg_path, cfg, source=None, explicit=None, after_carry=None):
+        orig_write_setup_config(cfg_path, cfg, source, explicit, after_carry)
+        if "--no-scripts" in argv:
+            _apply_sycl(cfg_path)
+    S.write_setup_config = write_setup_config
+
+    write = S.write_run_script
+
+    def write_run_script(model, cfg_path, port, open_browser=True):   # setup.write_run_script's signature (#870)
+        _apply_sycl(cfg_path, model=model)
         script = write(model, cfg_path, port, open_browser)
-        script.write_text(script.read_text().replace(str(ROOT.parent / "terminal" / "serve" / "server.py"), str(SERVER)))
+        script.write_text(script.read_text(encoding="utf-8").replace(str(S.ROOT / "serve" / "server.py"), str(SERVER)), encoding="utf-8")
         return script
     S.write_run_script = write_run_script
 
     start = S.start
 
     def start_sycl(cfg_path, *a, **k):
-        cfg = json.loads(Path(cfg_path).read_text(encoding="utf-8-sig"))
+        cfg_p = Path(cfg_path)
+        cfg = json.loads(cfg_p.read_text(encoding="utf-8-sig"))
         if cfg.get("backend") != "sycl":
             return start(cfg_path, *a, **k)
-        script = ROOT / f"run-{Path(cfg_path).stem[len('strata-'):]}.sh"
+        tag = layout.tag_from_config(cfg_p) if layout.is_config_file(cfg_p) else cfg_p.stem[len("strata-"):]
+        script = layout.script_path(S.home(), tag, windows=False)
+        if not script.is_file():
+            legacy = S.home() / f"run-{tag}.sh"
+            if not legacy.is_file() and tag != tag.lower():
+                legacy = S.home() / f"run-{tag.lower()}.sh"
+            script = legacy if legacy.is_file() else None
+        if script is None:
+            cmd = [sys.executable, str(SERVER), "--engine", "strata", "--config", str(cfg_p),
+                   "--port", str(cfg.get("port") or 8080)]
+            if cfg.get("open_browser") is True:
+                cmd.append("--open")
+            S.say(f"\nstarting {cfg.get('model_name', tag)} ...")
+            os.execv(sys.executable, cmd)
         S.say(f"\nstarting {script.name} ...")
         os.execv("/bin/sh", ["/bin/sh", str(script)])
     S.start = start_sycl

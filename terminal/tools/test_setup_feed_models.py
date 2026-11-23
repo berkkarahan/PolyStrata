@@ -375,6 +375,9 @@ class RefusalsAndOffline(Base):
         feed = self.signed_feed("f", 1, [own_path()])
         argv = ["setup.py", "--family", "qwen35-test", "--feed", feed, "--yes"]
         with mock.patch.object(sys, "argv", argv), mock.patch.object(self.setup, "feed_engine_families", lambda: {"qwen4exp"}), \
+                mock.patch.object(self.setup, "ROOT", self.root), \
+                mock.patch.object(self.setup, "_CONTROL_HOME", None), \
+                mock.patch.object(self.setup, "move_over_old_layout", return_value=[]), \
                 mock.patch.object(self.setup.sys, "platform", LINUX_PC), \
                 contextlib.redirect_stdout(io.StringIO()) as out, self.assertRaises(SystemExit) as stop:
             self.setup.main()
@@ -385,6 +388,9 @@ class RefusalsAndOffline(Base):
         feed = self.signed_feed("f", 1, [own_path()])
         argv = ["setup.py", "--family", "qwen35-test", "--model", "UD-Q4", "--feed", feed, "--check"]
         with mock.patch.object(sys, "argv", argv), mock.patch.object(self.setup, "feed_engine_families", lambda: {"qwen4exp", "qwen35moe"}), \
+                mock.patch.object(self.setup, "ROOT", self.root), \
+                mock.patch.object(self.setup, "_CONTROL_HOME", None), \
+                mock.patch.object(self.setup, "move_over_old_layout", return_value=[]), \
                 mock.patch.object(self.setup.sys, "platform", LINUX_PC), \
                 mock.patch.object(self.setup, "gather_hardware", side_effect=SystemExit(77), create=True), contextlib.redirect_stdout(io.StringIO()):
             try:

@@ -244,6 +244,9 @@ class CustomGgufTests(unittest.TestCase):
 
             stub = self._make_stub(fp_dict=first_entry, kind="known")
             with ExitStack() as stack:
+                stack.enter_context(mock.patch.object(setup, "ROOT", Path(tmp)))
+                stack.enter_context(mock.patch.object(setup, "_CONTROL_HOME", None))
+                stack.enter_context(mock.patch.object(setup, "move_over_old_layout", return_value=[]))
                 stack.enter_context(mock.patch.dict(sys.modules, {"strata_inspect": stub}))
                 # --family swift conflicts with resolved "qwen" → fail before GPU detection
                 argv = ["setup.py", "--custom-gguf", str(p), "--family", "swift", "--model", "IQ3_S"]
@@ -268,6 +271,9 @@ class CustomGgufTests(unittest.TestCase):
 
             stub = self._make_stub(fp_dict=fake_fp, kind="known", table=table)
             with ExitStack() as stack:
+                stack.enter_context(mock.patch.object(setup, "ROOT", Path(tmp)))
+                stack.enter_context(mock.patch.object(setup, "_CONTROL_HOME", None))
+                stack.enter_context(mock.patch.object(setup, "move_over_old_layout", return_value=[]))
                 stack.enter_context(mock.patch.dict(sys.modules, {"strata_inspect": stub}))
                 # No --family/--model flags → resolved (swift, FAKE_SIZE) must pass validation.
                 # FAKE_SIZE is NOT in family_models("swift") → fail before GPU detection.

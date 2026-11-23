@@ -363,6 +363,7 @@ from strata_control import drafting  # noqa: E402
 from strata_control import vram_fit  # noqa: E402
 from strata_control import user_args  # noqa: E402
 from strata_control import gpu_roles  # noqa: E402
+from strata_control import layout  # noqa: E402
 from serve import ready as ready_file  # noqa: E402
 from serve import owner_guard  # noqa: E402
 from serve import launch_identity  # noqa: E402
@@ -4140,8 +4141,12 @@ def hip_env_guard(env: dict, cfg: dict) -> list[str]:
             said.append(f"{k}={v} does not exist: not passed to the engine")
     bad = [k for k in ("TEMP", "TMP", "TMPDIR") if env.get(k) and not _dir_writable(env[k])]
     if bad:
-        base = Path(cfg.get("log") or cfg.get("cwd") or ROOT).resolve()
-        for d in (base.parent / "tmp", ROOT / "tmp"):
+        if cfg.get("log"):
+            candidates = (Path(cfg["log"]).resolve().parent / "tmp", layout.logs_dir(ROOT) / "tmp")
+        else:
+            base = Path(cfg.get("cwd") or ROOT).resolve()
+            candidates = (layout.logs_dir(base) / "tmp", layout.logs_dir(ROOT) / "tmp")
+        for d in candidates:
             try:
                 d.mkdir(parents=True, exist_ok=True)
             except OSError:
@@ -4523,6 +4528,8 @@ class Service:
             os.replace(tmp, path)
         except OSError as e:
             print(f"[strata] warm start: {path} could not be written ({e})", flush=True)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     def pin_path(self) -> Path:
         """The kept start as the engine saved it (a session file), next to warm_path().  The name says which start it
@@ -5043,14 +5050,11 @@ class Service:
     def read_shared(self, config_path) -> None:
         """The settings shared with other apps (POST /settings), kept next to the model's run config as
         strata-<model>.shared-settings.json: from the last time this model ran."""
-        self.shared_path = str(Path(config_path).with_suffix("")) + ".shared-settings.json"
-        try:
-            self.shared = clean_shared_defaults(json.loads(Path(self.shared_path).read_text(encoding="utf-8")))
-            if self.shared:
-                print("[strata] other apps use the settings: " +
-                      ", ".join(f"{k}={v}" for k, v in self.shared.items()), flush=True)
-        except (OSError, ValueError):
-            self.shared = {}
+        self.shared_path = str(layout.shared_settings_path(config_path))
+        self.shared = load_shared_settings(self.shared_path)
+        if self.shared:
+            print("[strata] other apps use the settings: " +
+                  ", ".join(f"{k}={v}" for k, v in self.shared.items()), flush=True)
 
     def set_aliases(self, aliases) -> None:
         """#297: the config's `aliases` - a list of names (or one comma-separated string), like llama-server's --alias.
@@ -5575,7 +5579,7 @@ class Service:
         if self.shared_path:
             try:
                 if self.shared:
-                    Path(self.shared_path).write_text(json.dumps(self.shared, indent=1), encoding="utf-8")
+                    layout.atomic_write_json(self.shared_path, self.shared, indent=1, backup=False)
                 else:
                     Path(self.shared_path).unlink(missing_ok=True)
             except OSError as e:
@@ -10150,9 +10154,9 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
     svc.backend = cfg.get("backend")                    # "hip": the AMD cards' readings come from sysfs (#301)
     if a.config:
         svc.config_path = a.config                      # #564: the web page's Settings view
-        svc.models_root = Path(a.config).resolve().parent   # the other models' configs are beside this one
+        svc.models_root = layout.install_home_for_config(a.config)
     if a.config:                                        # the settings shared with other apps, from last time
-        svc.shared_path = str(Path(a.config).with_suffix("")) + ".shared-settings.json"
+        svc.shared_path = str(layout.shared_settings_path(a.config))
         svc.shared = load_shared_settings(svc.shared_path)      # #4933: one unknown key no longer clears the rest
         if svc.shared:
             print("[strata] other apps use the settings: " +
@@ -10171,7 +10175,7 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
         # #2343: tool images reach a model that reads pictures unless the config says "image_results": false
         hub.settings["image_results"] = resolve_image_results(hub.settings, svc.has_vision())
         if hub.settings["image_results"]:
-            hub.media_dir = Path(a.config).with_suffix(".tool-media") if a.config else Path.cwd() / ".tool-media"
+            hub.media_dir = Path(a.config).with_suffix(".tool-media") if a.config else Path(tempfile.gettempdir()) / f"strata-tool-media-{os.getpid()}"
         print(f"[strata] starting {len(hub.servers)} MCP server{'s' * (len(hub.servers) != 1)} for requests with "
               f"\"strata_mcp\": true: {', '.join(hub.servers)}", flush=True)
         hub.start()

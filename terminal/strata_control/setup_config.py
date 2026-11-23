@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from strata_control import layout
+
 #: The reserve a Windows Strix Halo config gets when nothing else gives one: the engine's own default (--vram-reserve-mib 700), written down so the engine's
 #: Windows floor of 2560 MiB does not replace it (G16).  The app's own reserve and the one pictures on write are 700 or more already, so this is one rule for
 #: every size on a single-card Windows Strix Halo (no size threshold: a new model of unknown size could hang the same way).
@@ -431,7 +433,7 @@ def config_for(inp: SetupInputs, lib) -> SetupConfig:
         args += ["--control-vector-scaled", f"{esp}:1.0", "--control-vector-layer-range", "4", "44",
                  "--cvec-mode", "project", "--cvec-dir", "per-layer"]
     cfg = {"exe": engine_exe(eng), "args": args, "cwd": str(ROOT), "tokenizer": str(pack / "tokenizer"),
-           "model_name": f"{fam['name']}-{model.lower()}", "log": str(home() / f"strata-{tag.lower()}.log"),
+           "model_name": f"{fam['name']}-{model.lower()}", "log": str(layout.log_path(home(), tag)),
            "lib_dirs": lib_dirs, "port": port}
     if cuda_tk == 12:                                  # the experimental CUDA 12 engine (engine-cuda12/)
         cfg["cuda"] = 12
@@ -559,8 +561,8 @@ def config_for(inp: SetupInputs, lib) -> SetupConfig:
             cfg["parallel"] = 1
             ok("parallel requests: one at a time (--parallel 1)")
     if vision != "none":
-        old_cfg = home() / f"strata-{tag.lower()}.json"
-        vt = vision_tokens(a.vision_tokens, vision, old_cfg if old_cfg.is_file() else adopted)
+        old_cfg = layout.find_config(home(), tag) or adopted
+        vt = vision_tokens(a.vision_tokens, vision, old_cfg)
         cfg["vision"] = {"exe": str(eng / VEXE), "mmproj": str(mmproj),     # the text model, opened vocab-only:
                          "model": str(ready_paths(model, models_dir)["dense"] if ready else shards[0]),
                          "gpu": vision == "gpu", "max_tokens": vt}
@@ -573,7 +575,7 @@ def config_for(inp: SetupInputs, lib) -> SetupConfig:
         warn("--vision-tokens: images are off for this model, so it is not used")
     if a.images:                                       # only when given: else an earlier "images" is carried over
         cfg["images"] = setup_images(a, gpu, hip, Path(a.models_dir))
-    cfg_path = home() / f"strata-{tag.lower()}.json"
+    cfg_path = layout.config_path(home(), tag)
     cal = setup_calibration(cfg, hip)                  # #566: Linux HIP too; the tuning is offered on NVIDIA only
     if cal is not None:
         sys.path.insert(0, str(ROOT / "tools"))

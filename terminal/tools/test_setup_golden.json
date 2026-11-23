@@ -38,7 +38,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-iq3_s.log",
+   "log": "<T>/logs/strata-iq3_s.log",
    "model_name": "qwen3.8-flash-next-iq3_s",
    "port": 8080,
    "tokenizer": "<T>/data/packs/iq3_s/tokenizer",
@@ -90,7 +90,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-iq3_xxs.log",
+   "log": "<T>/logs/strata-iq3_xxs.log",
    "model_name": "qwen3.8-flash-next-iq3_xxs",
    "port": 8080,
    "tokenizer": "<T>/data/packs/iq3_xxs/tokenizer",
@@ -142,7 +142,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-q2_0.log",
+   "log": "<T>/logs/strata-q2_0.log",
    "model_name": "qwen3.8-flash-next-q2_0",
    "port": 8080,
    "tokenizer": "<T>/data/packs/q2_0/tokenizer",
@@ -194,7 +194,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-iq3_s.log",
+   "log": "<T>/logs/strata-iq3_s.log",
    "model_name": "qwen3.8-flash-next-iq3_s",
    "port": 8080,
    "tokenizer": "<T>/data/packs/iq3_s/tokenizer",
@@ -247,7 +247,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-unsloth-ud-q4_k_xl.log",
+   "log": "<T>/logs/strata-unsloth-ud-q4_k_xl.log",
    "model_name": "qwen3.8-flash-next-unsloth-ud-q4_k_xl",
    "port": 8080,
    "tokenizer": "<T>/data/packs/unsloth-ud-q4_k_xl/tokenizer",
@@ -307,7 +307,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-iq3_s.log",
+   "log": "<T>/logs/strata-iq3_s.log",
    "model_name": "qwen3.8-flash-next-iq3_s",
    "port": 8080,
    "tokenizer": "<T>/data/packs/iq3_s/tokenizer",
@@ -367,7 +367,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-iq3_xxs.log",
+   "log": "<T>/logs/strata-iq3_xxs.log",
    "model_name": "qwen3.8-flash-next-iq3_xxs",
    "port": 8080,
    "tokenizer": "<T>/data/packs/iq3_xxs/tokenizer",
@@ -427,7 +427,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-q2_0.log",
+   "log": "<T>/logs/strata-q2_0.log",
    "model_name": "qwen3.8-flash-next-q2_0",
    "port": 8080,
    "tokenizer": "<T>/data/packs/q2_0/tokenizer",
@@ -487,7 +487,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-iq3_xxs.log",
+   "log": "<T>/logs/strata-iq3_xxs.log",
    "model_name": "qwen3.8-flash-next-iq3_xxs",
    "port": 8080,
    "tokenizer": "<T>/data/packs/iq3_xxs/tokenizer",
@@ -546,7 +546,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-unsloth-ud-q4_k_xl.log",
+   "log": "<T>/logs/strata-unsloth-ud-q4_k_xl.log",
    "model_name": "qwen3.8-flash-next-unsloth-ud-q4_k_xl",
    "port": 8080,
    "tokenizer": "<T>/data/packs/unsloth-ud-q4_k_xl/tokenizer",
@@ -605,7 +605,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-iq3_s.log",
+   "log": "<T>/logs/strata-iq3_s.log",
    "model_name": "qwen3.8-flash-next-iq3_s",
    "port": 8080,
    "tokenizer": "<T>/data/packs/iq3_s/tokenizer",
@@ -664,7 +664,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-iq3_xxs.log",
+   "log": "<T>/logs/strata-iq3_xxs.log",
    "model_name": "qwen3.8-flash-next-iq3_xxs",
    "port": 8080,
    "tokenizer": "<T>/data/packs/iq3_xxs/tokenizer",
@@ -724,7 +724,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-q2_0.log",
+   "log": "<T>/logs/strata-q2_0.log",
    "model_name": "qwen3.8-flash-next-q2_0",
    "port": 8080,
    "tokenizer": "<T>/data/packs/q2_0/tokenizer",
@@ -783,7 +783,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-iq3_xxs.log",
+   "log": "<T>/logs/strata-iq3_xxs.log",
    "model_name": "qwen3.8-flash-next-iq3_xxs",
    "port": 8080,
    "tokenizer": "<T>/data/packs/iq3_xxs/tokenizer",
@@ -841,7 +841,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-unsloth-ud-q4_k_xl.log",
+   "log": "<T>/logs/strata-unsloth-ud-q4_k_xl.log",
    "model_name": "qwen3.8-flash-next-unsloth-ud-q4_k_xl",
    "port": 8080,
    "tokenizer": "<T>/data/packs/unsloth-ud-q4_k_xl/tokenizer",
@@ -895,7 +895,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-iq3_s.log",
+   "log": "<T>/logs/strata-iq3_s.log",
    "model_name": "qwen3.8-flash-next-iq3_s",
    "port": 8080,
    "tokenizer": "<T>/data/packs/iq3_s/tokenizer",
@@ -947,7 +947,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-iq3_xxs.log",
+   "log": "<T>/logs/strata-iq3_xxs.log",
    "model_name": "qwen3.8-flash-next-iq3_xxs",
    "port": 8080,
    "tokenizer": "<T>/data/packs/iq3_xxs/tokenizer",
@@ -999,7 +999,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-q2_0.log",
+   "log": "<T>/logs/strata-q2_0.log",
    "model_name": "qwen3.8-flash-next-q2_0",
    "port": 8080,
    "tokenizer": "<T>/data/packs/q2_0/tokenizer",
@@ -1051,7 +1051,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-iq3_s.log",
+   "log": "<T>/logs/strata-iq3_s.log",
    "model_name": "qwen3.8-flash-next-iq3_s",
    "port": 8080,
    "tokenizer": "<T>/data/packs/iq3_s/tokenizer",
@@ -1106,7 +1106,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-unsloth-ud-q4_k_xl.log",
+   "log": "<T>/logs/strata-unsloth-ud-q4_k_xl.log",
    "model_name": "qwen3.8-flash-next-unsloth-ud-q4_k_xl",
    "port": 8080,
    "tokenizer": "<T>/data/packs/unsloth-ud-q4_k_xl/tokenizer",
@@ -1157,7 +1157,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-iq3_s.log",
+   "log": "<T>/logs/strata-iq3_s.log",
    "model_name": "qwen3.8-flash-next-iq3_s",
    "port": 8080,
    "tokenizer": "<T>/data/packs/iq3_s/tokenizer",
@@ -1208,7 +1208,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-iq3_xxs.log",
+   "log": "<T>/logs/strata-iq3_xxs.log",
    "model_name": "qwen3.8-flash-next-iq3_xxs",
    "port": 8080,
    "tokenizer": "<T>/data/packs/iq3_xxs/tokenizer",
@@ -1259,7 +1259,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-q2_0.log",
+   "log": "<T>/logs/strata-q2_0.log",
    "model_name": "qwen3.8-flash-next-q2_0",
    "port": 8080,
    "tokenizer": "<T>/data/packs/q2_0/tokenizer",
@@ -1310,7 +1310,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-iq3_s.log",
+   "log": "<T>/logs/strata-iq3_s.log",
    "model_name": "qwen3.8-flash-next-iq3_s",
    "port": 8080,
    "tokenizer": "<T>/data/packs/iq3_s/tokenizer",
@@ -1362,7 +1362,7 @@
    "lib_dirs": [
     "<cuda>"
    ],
-   "log": "<T>/strata-unsloth-ud-q4_k_xl.log",
+   "log": "<T>/logs/strata-unsloth-ud-q4_k_xl.log",
    "model_name": "qwen3.8-flash-next-unsloth-ud-q4_k_xl",
    "port": 8080,
    "tokenizer": "<T>/data/packs/unsloth-ud-q4_k_xl/tokenizer",

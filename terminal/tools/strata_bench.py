@@ -54,7 +54,10 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from strata_control import layout  # noqa: E402
 from ab_engine import PROMPTS, long_prompt          # noqa: E402  the same three short questions and word list
 from agent_turns_bench import SYSTEM, TOOLS         # noqa: E402  the same agent system prompt and tool list
 import serve_load                                   # noqa: E402  the burst client for --clients
@@ -791,16 +794,17 @@ def collect_machine(base: str, key: str, cfg: dict | None, gpu_arg: str | None =
 # --------------------------------------------------------------------------------------------------- the server
 def find_configs(folder: Path = ROOT) -> list[Path]:
     out = []
-    for p in folder.glob("strata-*.json"):
-        if p.name.endswith(".shared-settings.json"):
-            continue
+    for p in layout.iter_config_files(folder):
         try:
+            st = p.lstat()
+            if p.is_symlink() or st.st_size > 1024 * 1024:
+                continue
             c = json.loads(p.read_text(encoding="utf-8-sig"))
         except (OSError, ValueError):
             continue
         if isinstance(c, dict) and c.get("exe") and isinstance(c.get("args"), list):
             out.append(p)
-    return sorted(out, key=lambda p: p.stat().st_mtime, reverse=True)
+    return sorted(out, key=lambda p: (p.lstat().st_mtime, 1 if p.parent.name.lower() == layout.CONFIGS_DIR else 0), reverse=True)
 
 
 def is_strata(base: str, key: str) -> bool:
@@ -1121,7 +1125,14 @@ def main(argv=None) -> int:
         if a.config:
             cfg_path = Path(a.config)
             if not cfg_path.is_absolute() and not cfg_path.exists():
-                cfg_path = ROOT / a.config
+                candidate = ROOT / a.config
+                if candidate.is_file():
+                    cfg_path = candidate
+                else:
+                    try:
+                        cfg_path = layout.resolve_config_ref(ROOT, a.config) or candidate
+                    except (FileNotFoundError, ValueError):
+                        cfg_path = candidate
         else:
             found = find_configs()
             if found:

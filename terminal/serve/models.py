@@ -17,11 +17,21 @@ if sys.platform == "win32":
     sys.modules["_wmi"] = None
 
 import json
+import os
+import posixpath
 import re
+import stat
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools"))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+if str(ROOT / "tools") not in sys.path:
+    sys.path.insert(0, str(ROOT / "tools"))
+
+from strata_control import layout  # noqa: E402
+
+MAX_CONFIG_BYTES = 1024 * 1024
 
 # what an architecture is run by, and what the registry calls it
 BACKENDS = {
@@ -105,40 +115,80 @@ def _aliases(value) -> list[str]:
     return [x.strip() for x in value if isinstance(x, str) and x.strip()] if isinstance(value, list) else []
 
 
+def _read_bounded_json(path: Path):
+    """Read a regular, non-symlink UTF-8 (or BOM) JSON file up to MAX_CONFIG_BYTES, or None on error."""
+    try:
+        if stat.S_ISLNK(path.lstat().st_mode):
+            return None
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
+        with os.fdopen(descriptor, "rb") as stream:
+            details = os.fstat(stream.fileno())
+            if not stat.S_ISREG(details.st_mode) or details.st_size > MAX_CONFIG_BYTES:
+                return None
+            raw = stream.read(MAX_CONFIG_BYTES + 1)
+        if len(raw) > MAX_CONFIG_BYTES:
+            return None
+        return json.loads(raw.decode("utf-8-sig"))
+    except (OSError, UnicodeError, ValueError):
+        return None
+
+
 def describe(config: Path) -> dict | None:
     """The registry's entry for a run config, or None when the file is not one."""
-    try:
-        cfg = json.loads(Path(config).read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError):
+    cfg = _read_bounded_json(Path(config))
+    if not isinstance(cfg, dict):
         return None
-    if not isinstance(cfg, dict) or not cfg.get("exe") or not isinstance(cfg.get("args"), list):
+    exe_val = cfg.get("exe")
+    args_val = cfg.get("args")
+    cwd_val = cfg.get("cwd")
+    tok_val = cfg.get("tokenizer")
+    if (
+        not isinstance(exe_val, str)
+        or not exe_val
+        or not isinstance(args_val, list)
+        or not all(isinstance(a, str) for a in args_val)
+        or (cwd_val is not None and not isinstance(cwd_val, str))
+        or (tok_val is not None and not isinstance(tok_val, str))
+    ):
         return None
-    args = [str(a) for a in cfg["args"]]
-    cwd = Path(cfg.get("cwd") or ROOT)
+    args = list(args_val)
+    cwd = Path(cwd_val or ROOT)
     model = _arg(args, "--model")
     path = (cwd / model) if model and not Path(model).is_absolute() else Path(model) if model else None
-    exe = Path(cfg["exe"]) if Path(cfg["exe"]).is_absolute() else cwd / cfg["exe"]
+    exe = Path(exe_val) if Path(exe_val).is_absolute() else cwd / exe_val
     ctx = _arg(args, "--max-context") or _arg(args, "--ctx")
+    model_name = cfg.get("model_name")
+    entry_id = model_name if isinstance(model_name, str) and model_name else Path(config).stem.replace("strata-", "", 1)
     e = {
-        "id": str(cfg.get("model_name") or Path(config).stem.replace("strata-", "", 1)),
+        "id": entry_id,
         "config": str(config),
         "display_name": None, "backend": "qwen4exp", "path": str(path) if path else None,
         "quantization": None, "params_total": None, "params_active": None,
-        "context": int(ctx) if ctx and str(ctx).isdigit() else None,
+        "context": int(ctx) if isinstance(ctx, str) and 1 <= len(ctx) <= 8 and ctx.isascii() and ctx.isdecimal() else None,
         "multimodal": bool(cfg.get("vision")),
         "aliases": _aliases(cfg.get("aliases")),
         "mtp": bool(_arg(args, "--draft-model")) and "--no-draft" not in args,
         "ram_gb": None, "vram_gb": None,
         "status": "available", "problem": None,
     }
-    tok = Path(cfg.get("tokenizer") or "")
-    if not exe.exists():
-        e["status"], e["problem"] = "unavailable", f"the engine is missing ({exe})"
-    elif not (tok / "vocab.json").exists():
-        e["status"], e["problem"] = "unavailable", f"the tokenizer is missing ({tok})"
+    tok = Path(tok_val or "")
+    try:
+        if not exe.exists():
+            e["status"], e["problem"] = "unavailable", f"the engine is missing ({exe})"
+        elif not (tok / "vocab.json").exists():
+            e["status"], e["problem"] = "unavailable", f"the tokenizer is missing ({tok})"
+    except (OSError, ValueError) as err:
+        e["status"], e["problem"] = "unavailable", f"the config path is invalid ({err})"
     if path is not None and path.suffix == ".gguf":
-        if not path.exists():
-            e["status"], e["problem"] = "unavailable", f"the model file is missing ({path})"
+        try:
+            path_exists = path.exists()
+        except (OSError, ValueError) as err:
+            e["status"], e["problem"] = "unavailable", f"the model file is invalid ({err})"
+            path_exists = False
+        if not path_exists:
+            if e["status"] == "available":
+                e["status"], e["problem"] = "unavailable", f"the model file is missing ({path})"
         else:
             try:
                 g = _gguf(path)
@@ -159,37 +209,122 @@ def describe(config: Path) -> dict | None:
                 if not g["runnable"]:
                     e["status"], e["problem"] = "unavailable", f"no engine here runs a '{g['backend']}' model"
     # the name setup gave it, else the file's own (a file's can be a converter's leftover), else the id
-    e["display_name"] = cfg.get("display_name") or e["display_name"] or e["id"]
+    disp = cfg.get("display_name")
+    e["display_name"] = (disp if isinstance(disp, str) and disp else None) or e["display_name"] or e["id"]
     return e
+
+
+def _mtime(path: Path) -> float:
+    try:
+        return path.lstat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _read_models_overlay(path: Path) -> dict:
+    data = _read_bounded_json(path)
+    return data if isinstance(data, dict) else {}
 
 
 def discover(root: Path = ROOT) -> list[dict]:
     """Every model of the installation, by name.  Two configs of one name: the newer file is the model."""
     root = Path(root)
-    try:
-        extra = json.loads((root / "models.json").read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError):
-        extra = {}
+    overlay_paths: list[Path] = []
+    if root.name.lower() == layout.CONFIGS_DIR:
+        overlay_paths.append(root.parent / "models.json")
+    overlay_paths.append(root / "models.json")
+    if root.name.lower() != layout.CONFIGS_DIR:
+        overlay_paths.append(layout.configs_dir(root) / "models.json")
+    extra: dict = {}
+    for overlay_path in overlay_paths:
+        layer = _read_models_overlay(overlay_path)
+        for k, v in layer.items():
+            if isinstance(v, dict):
+                cur = extra.get(k)
+                extra[k] = {**cur, **v} if isinstance(cur, dict) else dict(v)
     out: dict[str, dict] = {}
-    for p in sorted(root.glob("strata-*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+    candidates = sorted(
+        layout.iter_config_files(root),
+        key=lambda p: (_mtime(p), 1 if p.parent.name.lower() == layout.CONFIGS_DIR else 0),
+        reverse=True,
+    )
+    for p in candidates:
         e = describe(p)
         if e is None or e["id"] in out:
             continue
-        more = extra.get(e["id"]) if isinstance(extra, dict) else None
+        more = extra.get(e["id"])
         if isinstance(more, dict):
             e.update({k: v for k, v in more.items() if k not in ("id", "config", "status", "problem")})
+            if "aliases" in more:
+                e["aliases"] = _aliases(more["aliases"])
         out[e["id"]] = e
     return sorted(out.values(), key=lambda e: e["id"])
 
 
 def find(models: list[dict], name: str) -> dict | None:
-    """A model by its name, by a config file's name, or by the one name that contains what was typed."""
+    """A model by its name, by a config file's name/tag/path, or by the one name that contains what was typed."""
     name = name.strip()
     low = name.lower()
-    for e in models:
-        if low in (e["id"].lower(), Path(e["config"]).name.lower(), Path(e["config"]).stem.lower()):
-            return e
-    close = [e for e in models if low and low in e["id"].lower()]
+    if not low:
+        return None
+    if "/" in name or "\\" in name:
+        path_matches = []
+        p_in = Path(name)
+        try:
+            resolved_in = str(p_in.resolve()).lower()
+        except OSError:
+            resolved_in = os.path.abspath(name).lower()
+        is_rel = not p_in.is_absolute() and not p_in.anchor
+        norm_rel = posixpath.normpath(name.replace("\\", "/")) if is_rel else ""
+        escapes_root = is_rel and (norm_rel == ".." or norm_rel.startswith("../"))
+        rel_parts = (
+            tuple(part.lower() for part in norm_rel.split("/") if part not in ("", "."))
+            if is_rel and not escapes_root
+            else ()
+        )
+        for e in models:
+            cfg_p = Path(e["config"])
+            try:
+                resolved_cfg = str(cfg_p.resolve()).lower()
+            except OSError:
+                resolved_cfg = os.path.abspath(e["config"]).lower()
+            if resolved_cfg == resolved_in:
+                path_matches.append(e)
+            elif len(rel_parts) >= 2:
+                cfg_parts = tuple(part.lower() for part in cfg_p.parts)
+                if len(cfg_parts) >= len(rel_parts) and cfg_parts[-len(rel_parts):] == rel_parts:
+                    path_matches.append(e)
+            elif len(rel_parts) == 1:
+                if cfg_p.parent.name.lower() != layout.CONFIGS_DIR and cfg_p.name.lower() == rel_parts[0]:
+                    path_matches.append(e)
+        if len(path_matches) == 1:
+            return path_matches[0]
+        if len(path_matches) > 1:
+            return None
+    id_matches = [e for e in models if e["id"].lower() == low]
+    if len(id_matches) == 1:
+        return id_matches[0]
+    if len(id_matches) > 1:
+        return None
+    cfg_matches = [
+        e for e in models
+        if low in (Path(e["config"]).name.lower(), Path(e["config"]).stem.lower())
+    ]
+    if len(cfg_matches) == 1:
+        return cfg_matches[0]
+    if len(cfg_matches) > 1:
+        return None
+    tag_matches = [
+        e for e in models
+        if Path(e["config"]).stem.lower().startswith("strata-")
+        and len(Path(e["config"]).stem) > len("strata-")
+        and Path(e["config"]).stem.lower().removeprefix("strata-") == low
+    ]
+    if len(tag_matches) == 1:
+        return tag_matches[0]
+    if len(tag_matches) > 1:
+        return None
+    close = [e for e in models if low in e["id"].lower()]
     return close[0] if len(close) == 1 else None
 
 
@@ -202,7 +337,7 @@ def resolve(models: list[dict], name) -> dict | None:
     low = name.strip().lower()
     for e in models:
         config = Path(e["config"])
-        if low in (e["id"].lower(), config.name.lower(), config.stem.lower(), *(a.lower() for a in e.get("aliases", ()))):
+        if low in (e["id"].lower(), config.name.lower(), config.stem.lower(), *(a.lower() for a in e.get("aliases", ()) if isinstance(a, str))):
             return e
     return None
 
@@ -210,8 +345,18 @@ def resolve(models: list[dict], name) -> dict | None:
 def line(e: dict, current: str | None = None) -> str:
     """One line of a listing."""
     size = "-".join(x for x in (e["params_total"], "A" + e["params_active"] if e["params_active"] else None) if x)
-    vram = e["vram_gb"]
-    need = f"VRAM {vram['least']:g}-{vram['all']:g} GB, file {e['ram_gb']:g} GB" if vram else ""
+    vram = e.get("vram_gb")
+    ram = e.get("ram_gb")
+    if (
+        isinstance(vram, dict)
+        and isinstance(vram.get("least"), (int, float)) and not isinstance(vram.get("least"), bool)
+        and isinstance(vram.get("all"), (int, float)) and not isinstance(vram.get("all"), bool)
+    ):
+        need = f"VRAM {vram['least']:g}-{vram['all']:g} GB"
+        if isinstance(ram, (int, float)) and not isinstance(ram, bool):
+            need += f", file {ram:g} GB"
+    else:
+        need = ""
     mark = "*" if e["id"] == current else " "
     what = ", ".join(x for x in (size, e["quantization"], e["backend"], f"context {e['context']}" if e["context"] else "",
                                  "images" if e["multimodal"] else "", "MTP" if e["mtp"] else "", need) if x)

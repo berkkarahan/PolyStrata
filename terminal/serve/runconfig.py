@@ -10,11 +10,15 @@ to the model (#37), so a change is used from the next start of, or switch to, th
 from __future__ import annotations
 
 import json
-import shutil
+import os
+import tempfile
+import threading
 from pathlib import Path
 
 from strata_control import user_args
 from strata_control import atomic as _atomic_mod
+
+_SAVE_LOCK = threading.Lock()
 
 # (key, kind, help).  kind: "bool", "int>=0", "num>=0", ("enum", values), "names", or ("sampling", check) for a key
 # of the "sampling" block, ("arg", flag) for an engine option kept in "args".
@@ -181,12 +185,32 @@ def apply(cfg: dict, changes: dict) -> tuple[dict, list[str]]:
 
 def save(path: str | Path, cfg: dict) -> Path:
     """The config written whole (a temporary file moved over the old one), the earlier one kept as <name>.bak."""
+    from strata_control import layout
     path = Path(path)
-    bak = path.with_name(path.name + ".bak")
-    shutil.copyfile(path, bak)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(cfg, indent=1), encoding="utf-8")
-    _atomic_mod.replace(tmp, path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    bak = layout.backup_path(path)
+    payload = json.dumps(cfg, indent=1).encode("utf-8")
+    with _SAVE_LOCK:
+        if path.is_file():
+            bak_bytes = path.read_bytes()
+            bak_fd, bak_tmp_name = tempfile.mkstemp(prefix=f".{bak.name}-", suffix=".tmp", dir=path.parent)
+            bak_tmp = Path(bak_tmp_name)
+            try:
+                with os.fdopen(bak_fd, "wb") as stream:
+                    stream.write(bak_bytes)
+                    stream.flush()
+                _atomic_mod.replace(bak_tmp, bak)
+            finally:
+                bak_tmp.unlink(missing_ok=True)
+        fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}-", suffix=".tmp", dir=path.parent)
+        tmp = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(payload)
+                stream.flush()
+            _atomic_mod.replace(tmp, path)
+        finally:
+            tmp.unlink(missing_ok=True)
     return bak
 
 

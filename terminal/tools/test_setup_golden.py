@@ -76,8 +76,10 @@ def install(ram, found, argv, answers=None, extra=(), avx512=False, configs=()):
         eng = t / "engine"
         eng.mkdir()
         (eng / "BUILD.json").write_text(json.dumps({"version": "0.1.32", "source": "local", "cuda_dirs": ["<cuda>"]}))
+        if configs:
+            (t / "configs").mkdir(parents=True, exist_ok=True)
         for name, c in configs:
-            (t / name).write_text(json.dumps(c))
+            (t / "configs" / name).write_text(json.dumps(c))
         asked = []
 
         def fake_input(prompt=""):
@@ -99,6 +101,8 @@ def install(ram, found, argv, answers=None, extra=(), avx512=False, configs=()):
             # These fixtures describe PCs, even when the test runner is a Mac.
             mock.patch.object(setup.sys, "platform", "win32" if setup.WIN else "linux"),
             mock.patch.object(setup, "ROOT", t),
+            mock.patch.object(setup, "_CONTROL_HOME", None),
+            mock.patch.object(setup, "move_over_old_layout", return_value=[]),
             mock.patch.object(setup, "GPU_PICK", None),
             mock.patch.object(setup, "data_folder", lambda d, *a, **k: (t / "data", [])),
             mock.patch.object(setup, "load_settings", lambda: {}),
@@ -125,7 +129,7 @@ def install(ram, found, argv, answers=None, extra=(), avx512=False, configs=()):
             mock.patch.object(setup, "run", lambda *a, **k: None),
             mock.patch.object(setup, "mtp_corrupt", lambda *a, **k: False),
             mock.patch.object(setup, "refresh_draft_vocab", lambda *a, **k: None),
-            mock.patch.object(setup, "write_run_script", lambda tag, cfg, port, *_: t / f"run-{tag}.bat"),
+            mock.patch.object(setup, "write_run_script", lambda tag, cfg, port, *_: t / "scripts" / f"run-{tag}.bat"),
             mock.patch.object(setup, "saved_calibration", lambda cfg: None),
             mock.patch.object(setup, "calibrate_config", mock.Mock(side_effect=AssertionError("calibrated"))),
             mock.patch.dict(sys.modules, {"gguf_reader": types.SimpleNamespace(GGUFFile=FakeGGUF)}),
@@ -147,8 +151,9 @@ def install(ram, found, argv, answers=None, extra=(), avx512=False, configs=()):
         # the config this run wrote: a new file or one whose bytes changed, not just the newest time (a fast run on a coarse clock, GitHub's
         # Windows runner, wrote strata-iq3_s.json in the same tick as the strata-iq3_xxs.json put here before it, and the name order won)
         before = {name: json.dumps(c) for name, c in configs}
-        changed = [p for p in t.glob("strata-*.json") if before.get(p.name) != p.read_text(encoding="utf-8")]
-        written = sorted(changed or t.glob("strata-*.json"), key=lambda p: p.stat().st_mtime_ns)
+        cfg_dir = t / "configs"
+        changed = [p for p in cfg_dir.glob("strata-*.json") if before.get(p.name) != p.read_text(encoding="utf-8")] if cfg_dir.is_dir() else []
+        written = sorted(changed or (cfg_dir.glob("strata-*.json") if cfg_dir.is_dir() else []), key=lambda p: p.stat().st_mtime_ns)
         cfg = None
         if written and code == 0:
             cfg = normalize(json.loads(written[-1].read_text(encoding="utf-8")), t)

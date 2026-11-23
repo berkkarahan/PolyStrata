@@ -56,7 +56,7 @@
     "cwd": "<REPO>",
     "tokenizer": "<ROOT>/data/packs/ud_iq4_xs_v31/tokenizer",
     "model_name": "qwen3.8-flash-next-unsloth-ud-iq4_xs-v31",
-    "log": "<REPO>/strata-unsloth-ud-iq4_xs-v31.log",
+    "log": "<REPO>/logs/strata-unsloth-ud-iq4_xs-v31.log",
     "lib_dirs": [],
     "port": 8080,
     "env": {

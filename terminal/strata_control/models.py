@@ -22,7 +22,7 @@ import stat
 import sys
 from pathlib import Path
 
-from strata_control import discovery
+from strata_control import discovery, layout
 from strata_control.doctor import inspect as inspect_components
 from strata_control.gguf_preflight import inspect_metadata, real_model_file
 from strata_control.profiles import ProfileError
@@ -110,14 +110,42 @@ def _model_id(path: Path) -> str | None:
     return value if MODEL_ID.fullmatch(value) else None
 
 
-def _paths(directory: Path) -> list[tuple[str, Path]]:
+def _is_non_dir_entry(path: Path) -> bool:
     try:
-        entries = [(name, path) for path in directory.iterdir() if (name := _model_id(path)) is not None]
+        return path.is_symlink() or not path.is_dir()
+    except OSError:
+        return False
+
+
+def _paths(directory: Path) -> list[tuple[str, Path]]:
+    by_id: dict[str, Path] = {}
+    shadowed: set[str] = set()
+    cfg_dir = layout.configs_dir(directory)
+    try:
+        has_cfg_dir = cfg_dir.is_dir()
     except OSError:
         raise ProfileError("cannot read installed model directory", 5) from None
-    if len(entries) > MAX_CONFIGS:
+    if has_cfg_dir:
+        try:
+            for path in cfg_dir.iterdir():
+                if not layout.is_config_file(path) or not _is_non_dir_entry(path):
+                    continue
+                if (name := _model_id(path)) is not None and name not in by_id:
+                    shadowed.add(path.name.lower())
+                    by_id[name] = path
+        except OSError:
+            raise ProfileError("cannot read installed model directory", 5) from None
+    try:
+        for path in directory.iterdir():
+            if path.name.lower() in shadowed or not _is_non_dir_entry(path):
+                continue
+            if (name := _model_id(path)) is not None and name not in by_id:
+                by_id[name] = path
+    except OSError:
+        raise ProfileError("cannot read installed model directory", 5) from None
+    if len(by_id) > MAX_CONFIGS:
         raise ProfileError("more than 128 model configs need inspection", 5)
-    return sorted(entries, key=lambda item: item[0])
+    return sorted(by_id.items(), key=lambda item: item[0])
 
 
 def _read(path: Path) -> tuple[bytes, dict]:

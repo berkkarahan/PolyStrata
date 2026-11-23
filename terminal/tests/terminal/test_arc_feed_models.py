@@ -206,7 +206,7 @@ class AppArcPath(unittest.TestCase):
                 mock.patch.object(intel_app, "supported_here", lambda platform=None: True):
             self.assertEqual(setup.intel_control_setup(a), 0)
         self.assertEqual(fetched, [{"shape": "q4_lite", "title": "Qwen4 Rehearsal"}])
-        cfg = json.loads((home / "strata-q4rehearsal-b-ud-q4_k_xl-q4rehearsal-b.json").read_text(encoding="utf-8"))
+        cfg = json.loads((home / "configs" / "strata-q4rehearsal-b-ud-q4_k_xl-q4rehearsal-b.json").read_text(encoding="utf-8"))
         self.assertEqual((cfg["exe"], cfg["backend"], cfg["drafting"], cfg["mtp"]), ("component:strata-q4-lite", "sycl", "off", False))
         self.assertEqual(cfg["shape_title"], "Qwen4 Rehearsal")
 
