@@ -48,7 +48,7 @@ Anthropic API works too.
 > window. The window tells you what it is doing.
 
 **Next time**, just double-click `START-HERE.bat` again: it starts right away (30-90 s to load the model), nothing is
-downloaded twice. Close its window to stop the model. `START-HERE.bat --setup` installs another model or changes the
+downloaded twice. Close its window to stop the model. `SETUP.bat` (`START-HERE.bat --setup`) installs another model or changes the
 settings. Starting PolyStrata from Task Scheduler at logon needs two task settings, or the start is 24x slower:
 [Running it at startup](DETAILS.md#running-it-at-startup-task-scheduler).
 
@@ -152,7 +152,7 @@ says so and starts the engine you had.
 ### Coming from 0.1.45-poly.10 or older
 
 Since 0.2.19-poly.1 PolyStrata has a folder for each part (`engine/`, `terminal/`, `docs/`, `tools/`).
-`START-HERE.bat`, `UPDATE.bat` and `setup.sh` stay at the top and work as before. What was at the top besides them
+`START-HERE.bat`, `SETUP.bat`, `UPDATE.bat` and `setup.sh` stay at the top and work as before. What was at the top besides them
 is now in `terminal/`:
 
 - setup (`setup.py`), the server (`serve/`), `strata.py` and the Python environment (`.venv`)
@@ -230,7 +230,7 @@ card under Windows keeps the default settings. [What it measures](DETAILS.md#tun
 ## Options without questions
 
 ```
-START-HERE.bat --setup                          install another model, or change context / images
+START-HERE.bat --setup                          install another model, or change context / images (what SETUP.bat runs)
 START-HERE.bat --model IQ2_XS --context 32768 --vision yes --yes     no questions
 START-HERE.bat --setup --family qwen36          another model (every family: START-HERE.bat --help)
 START-HERE.bat --gguf-dir D:\models\IQ2_XS      use GGUF files you already have

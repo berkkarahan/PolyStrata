@@ -3,8 +3,8 @@
 Use this guide to work on PolyStrata's code or maintain a source-based installation. It is for developers.
 To just use PolyStrata, follow [INSTALL.md](INSTALL.md): it is the same `START-HERE.bat` and `setup.sh`, run with their defaults.
 
-The repository includes `START-HERE.bat`, `UPDATE.bat` and `setup.sh`. (`SETUP.bat` and `update.sh` went away with the 0.2.16 folder
-layout: `START-HERE.bat --setup` and `./setup.sh --setup` do what `SETUP.bat` did, `START-HERE.bat --update` and `./setup.sh --update` what `update.sh` did.)
+The repository includes `START-HERE.bat`, `SETUP.bat`, `UPDATE.bat` and `setup.sh`. (`update.sh` went away with the 0.2.16 folder
+layout: `./setup.sh --update` does what `update.sh` did, and `SETUP.bat` / `UPDATE.bat` run `START-HERE.bat --setup` / `--update`.)
 Run them from a cloned or extracted **source folder**. They may install dependencies, prepare model files and
 acquire or build an engine. Check [model requirements](MODELS.md) before downloading.
 
@@ -32,7 +32,7 @@ START-HERE.bat --family qwen --model Q2_0
 
 Choose a pack that fits your machine; Q2_0 is an example, not a universal minimum-memory option.
 In PowerShell, prefix the wrapper with `.\`, for example `.\START-HERE.bat`.
-`START-HERE.bat --setup` opens setup again to add a model or change settings. The wrapper can reuse an existing install;
+`SETUP.bat` (`START-HERE.bat --setup`) opens setup again to add a model or change settings. The wrapper can reuse an existing install;
 first-start and later load times depend on the pack, disk, RAM and backend. A model can take several minutes to load.
 Run again over an installed model, setup pre-selects the size that is installed and marks it "(installed)", and `--yes` takes it: a repeat run
 does not move the model to the recommended size.

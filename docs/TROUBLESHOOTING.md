@@ -14,8 +14,8 @@ START-HERE.bat --check       # Linux and Mac: ./setup.sh --check
 ## The Terminal
 
 **I cannot find `START-HERE.bat` or `SETUP.bat`.**
-`START-HERE.bat` (Windows) and `setup.sh` (Linux, Mac) are at the top of the PolyStrata folder you downloaded or cloned.
-`SETUP.bat` is gone since the 0.2.16 layout: `START-HERE.bat --setup` does what it did.
+`START-HERE.bat`, `SETUP.bat`, `UPDATE.bat` (Windows) and `setup.sh` (Linux, Mac) are at the top of the PolyStrata folder you downloaded or cloned.
+`SETUP.bat` runs `START-HERE.bat --setup`.
 
 **`strata` is not found.**
 On Windows, open a new PowerShell window after installing. On Linux or Mac, use the full path the installer printed,

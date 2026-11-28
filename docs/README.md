@@ -48,7 +48,7 @@ Use the guide for your GPU and operating system. Model and feature support can d
 
 ## Which instructions apply?
 
-`START-HERE.bat`, `UPDATE.bat` and `setup.sh` are PolyStrata's setup; raw engine options in a model's run config are a
+`START-HERE.bat`, `SETUP.bat`, `UPDATE.bat` and `setup.sh` are PolyStrata's setup; raw engine options in a model's run config are a
 second interface. `strata launch` and the other `strata` commands belong to the Strata project's Terminal, which this
 repository carries in `terminal/` ([TERMINAL_LAUNCH.md](TERMINAL_LAUNCH.md)); it sets up Qwen3.8-Flash-Next only. Their
 flags are not interchangeable: the Terminal uses `--gpu` and `--vision on|off`, setup uses `--gpus` and `--vision yes|no`.
