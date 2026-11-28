@@ -3,6 +3,18 @@
 # reuse .venv, find/install Python, create .venv, then choose model, quantization and context.
 # The launcher hands the choices and original arguments to the Mac or Linux installer.
 cd "$(dirname "$0")" || exit 1
+# the Terminal's sources and everything setup writes live in terminal/ (0.2.16 layout); an older clone's .venv moves there once
+if [ -f terminal/setup.py ]; then
+  [ -e terminal/.venv ] || { [ -x .venv/bin/python ] && mv .venv terminal/.venv; }
+  cd terminal || exit 1
+fi
+# A bundled Python runtime (the python/ folder of the terminal archive) is used when it is there: nothing to find,
+# install or download. (./setup.sh --setup, --update)
+if [ -x python/bin/python3 ]; then
+  PYTHONNOUSERSITE=1; export PYTHONNOUSERSITE
+  unset PYTHONHOME PYTHONPATH
+  exec python/bin/python3 tools/setup_launcher.py "$@"
+fi
 
 finish() {
   status=$1
@@ -104,10 +116,11 @@ create_venv() {
     UV=$(command -v uv 2>/dev/null) || fail "uv is needed for NixOS or STRATA_UV=1. Install uv, then run ./setup.sh again."
   fi
   if [ -z "$UV" ] && ! find_python; then
-    case "$platform" in
-      Darwin) install_mac_python ;;
-      Linux) install_linux_python ;;
-    esac
+    if [ "$(uname -s)" = Darwin ]; then
+      install_mac_python
+    else
+      install_linux_python
+    fi
     find_python || fail "Python 3.10+ with venv and pip is still unavailable. On Ubuntu/Debian, install python3-venv; then run ./setup.sh again."
   fi
 
@@ -130,7 +143,7 @@ run_setup() {
 }
 
 # Match START-HERE.bat: a usable environment goes straight to setup, without another install.
-if ! venv_ready; then
+if [ ! -x .venv/bin/python ] || ! venv_ready; then
   platform=$(uname -s)
   case "$platform" in
     Darwin|Linux) create_venv ;;
