@@ -87,6 +87,9 @@ from strata_control import layout
 from strata_control import sysinfo
 from strata_control.discovery import in_trash
 from strata_control import user_args
+from tools import hf_auth
+
+_ORIG_HF_URLOPEN = hf_auth.urlopen
 
 ROOT = Path(__file__).resolve().parent
 
@@ -123,6 +126,7 @@ WIN = os.name == "nt"
 # day.  Every file has a fixed size and SHA-256 too (REPO_PINS); a revision the repository no longer has stops the
 # download (download()), unless a tester sets STRATA_ALLOW_UNPINNED=1.
 HF_REVISIONS = {
+    "bartowski/Ornith-1.5-397B-GGUF": "217875e8f6cf3989807cfe0313b43309874c4e90",  # 2026-11-02
     "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",        # 2026-09-29
     "ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d",   # 2026-10-07 (adds IQ3_S)
     "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF": "bba88856f8c3c0c9e40e45f82d05e228b814ac43",  # 2026-10-19 (the new expert-pruned shard 1)
@@ -1155,6 +1159,117 @@ FAMILIES = {
                           (23718411808, "2cedb760ebafb9f4943b4eac92628306110fc04eeea45dae2e1396aad626e691"),
                           "mmproj.gguf":
                           (899283200, "e277123529451fbcff6d880ad5bd7ada999f9d5e6339ba3639d06c5cef4763b1")}},
+    # Ornith 397B: expert bytes from all pinned GGUF headers. VRAM is an upper estimate:
+    # all non-expert file bytes plus 6 GiB for 32K KV, recurrent snapshots, prompt scratch and reserve.
+    # No 35B tuning flags apply. IQ1_S text was smoke-tested on Windows AMD; memory budgets remain estimates.
+    "ornith397": {'title': 'Ornith 1.5 397B',
+     'by': 'ornith-ai; quantized by bartowski',
+     'about': '397B on strata-poly; six IQ1/IQ2 sizes, 81.8-133.1 GB; memory estimates; IQ1_S text tested '
+              'on Windows AMD',
+     'hf': hf("bartowski/Ornith-1.5-397B-GGUF"),
+     'file': 'Ornith-1.5-397B-{q}-0000{i}-of-00003.gguf',
+     'tag': 'ornith397-',
+     'name': 'ornith-1.5-397b',
+     'engine': 'poly',
+     'vision': True,
+     'experimental': True,
+     'memory_estimate': True,
+     'windows': True,  # IQ1_S text on RX 9070 XT; other sizes and image input remain unvalidated.
+     'row_bytes': 30720,
+     'mmproj_hf': hf("bartowski/Ornith-1.5-397B-GGUF"),
+     'mmproj': 'mmproj-Ornith-1.5-397B-f16.gguf',
+     'vision_gb': 0.918,
+     'vision_vram_gb': 2.0,
+     'models': {'IQ2_XXS': {'about': 'IQ2_XXS mixed i-quants; no MTP draft block',
+                            'download_gb': 106.31,
+                            'ram_gb': 111,
+                            'arena_gb': 100.596,
+                            'vram_beside_gb': 11.4,
+                            'shards': 3,
+                            'file': 'Ornith-1.5-397B-{q}-0000{i}-of-00003.gguf',
+                            'hf': hf("bartowski/Ornith-1.5-397B-GGUF") + 'Ornith-1.5-397B-IQ2_XXS/'},
+                'IQ1_M': {'about': 'IQ1_M mixed i-quants; no MTP draft block',
+                          'download_gb': 91.36,
+                          'ram_gb': 96,
+                          'arena_gb': 85.732,
+                          'vram_beside_gb': 11.3,
+                          'shards': 3,
+                          'file': 'Ornith-1.5-397B-{q}-0000{i}-of-00003.gguf',
+                          'hf': hf("bartowski/Ornith-1.5-397B-GGUF") + 'Ornith-1.5-397B-IQ1_M/'},
+                'IQ1_S': {'about': 'IQ1_S mixed i-quants; no MTP draft block',
+                          'download_gb': 81.78,
+                          'ram_gb': 86,
+                          'arena_gb': 76.202,
+                          'vram_beside_gb': 11.2,
+                          'shards': 3,
+                          'file': 'Ornith-1.5-397B-{q}-0000{i}-of-00003.gguf',
+                          'hf': hf("bartowski/Ornith-1.5-397B-GGUF") + 'Ornith-1.5-397B-IQ1_S/'},
+                'IQ2_XS': {'about': 'IQ2_XS mixed i-quants; no MTP draft block',
+                           'download_gb': 118.47,
+                           'ram_gb': 123,
+                           'arena_gb': 112.676,
+                           'vram_beside_gb': 11.4,
+                           'shards': 3,
+                           'file': 'Ornith-1.5-397B-{q}-0000{i}-of-00003.gguf',
+                           'hf': hf("bartowski/Ornith-1.5-397B-GGUF") + 'Ornith-1.5-397B-IQ2_XS/'},
+                'IQ2_S': {'about': 'IQ2_S mixed i-quants; no MTP draft block',
+                          'download_gb': 120.51,
+                          'ram_gb': 125,
+                          'arena_gb': 114.555,
+                          'vram_beside_gb': 11.6,
+                          'shards': 4,
+                          'file': 'Ornith-1.5-397B-{q}-0000{i}-of-00004.gguf',
+                          'hf': hf("bartowski/Ornith-1.5-397B-GGUF") + 'Ornith-1.5-397B-IQ2_S/'},
+                'IQ2_M': {'about': 'IQ2_M mixed i-quants; no MTP draft block',
+                          'download_gb': 133.13,
+                          'ram_gb': 137,
+                          'arena_gb': 127.104,
+                          'vram_beside_gb': 11.7,
+                          'shards': 4,
+                          'file': 'Ornith-1.5-397B-{q}-0000{i}-of-00004.gguf',
+                          'hf': hf("bartowski/Ornith-1.5-397B-GGUF") + 'Ornith-1.5-397B-IQ2_M/'}},
+     'sha256': {'Ornith-1.5-397B-IQ2_XXS-00001-of-00003.gguf': (39827589920,
+                                                                '158315066844bc8ec7438160e9e2a95695ab622a8279a19dd291730af70c407b'),
+                'Ornith-1.5-397B-IQ2_XXS-00002-of-00003.gguf': (39901043776,
+                                                                '85fb29d9f8459a8c06a0cf61eaa79279afc468a9738de011b3500e9b568095fc'),
+                'Ornith-1.5-397B-IQ2_XXS-00003-of-00003.gguf': (26586074976,
+                                                                '175c8329e1a1beb61261b1c0940ed6245eeba1291f8e20ab8597aaf6102244ba'),
+                'Ornith-1.5-397B-IQ1_M-00001-of-00003.gguf': (39770352160,
+                                                              'aba864b3b8faf039859847dd3e3a0387b77daf6f7d2c9db4c497458aedcb0681'),
+                'Ornith-1.5-397B-IQ1_M-00002-of-00003.gguf': (39539687744,
+                                                              'fad657307c37053b6aa1901f73430c6c627124d74b6d9339b79c71a5ca2917f6'),
+                'Ornith-1.5-397B-IQ1_M-00003-of-00003.gguf': (12050926432,
+                                                              'fc9864a5f17e786b029b50826671aae8c23d016dd81863bdbbc02f37601da8ab'),
+                'Ornith-1.5-397B-IQ1_S-00001-of-00003.gguf': (39623329664,
+                                                              '433d5a0f20dc6fcd487e90a627cc1c5cd5b1792332ecddb5b878e057b6ae07f2'),
+                'Ornith-1.5-397B-IQ1_S-00002-of-00003.gguf': (39887379296,
+                                                              'e9c31a4f64df2d64c02eeeacefd8bd830342fc43ed22480148d0298b9d71d51c'),
+                'Ornith-1.5-397B-IQ1_S-00003-of-00003.gguf': (2267321312,
+                                                              'a8c288c8c189447bde3519e254d968034123d3181db1e08a3bd7f951371dc394'),
+                'Ornith-1.5-397B-IQ2_XS-00001-of-00003.gguf': (39738849344,
+                                                               'bffeca5ed3c83098432e6b294e08c8682859cfc1cfdb258ea3849443cf187878'),
+                'Ornith-1.5-397B-IQ2_XS-00002-of-00003.gguf': (39417790560,
+                                                               'a842a833c21c932629e48a6014c21cac04060e1ddf472d7fdc81cfcb1abdd309'),
+                'Ornith-1.5-397B-IQ2_XS-00003-of-00003.gguf': (39308967456,
+                                                               '719d1df97b22121b12a5857a14d2eef3764f9def936da8d63a88e83b65a9bcde'),
+                'Ornith-1.5-397B-IQ2_S-00001-of-00004.gguf': (39548008096,
+                                                              'e3c9a3e08bb88ac5bd15877c2666138781d65d3ec2763b1e26326deebc5a9864'),
+                'Ornith-1.5-397B-IQ2_S-00002-of-00004.gguf': (39396523872,
+                                                              '9fbb235ad6fc69a8fdbcf0c9b2ca42ef12e1bbbb5e353e17d90139733401d58d'),
+                'Ornith-1.5-397B-IQ2_S-00003-of-00004.gguf': (39480950336,
+                                                              '032c9cb7de44c1de8b20bb6bb5bad8cf1f1078585183ed4a6d5eae4bb72cd673'),
+                'Ornith-1.5-397B-IQ2_S-00004-of-00004.gguf': (2085389024,
+                                                              '17be3eeee4be08572d7d9a127ab3841d243ffef5ef35aa523dc15b96f51580e1'),
+                'Ornith-1.5-397B-IQ2_M-00001-of-00004.gguf': (39330192480,
+                                                              '3eabdc331e4ee4c94c7080c1732ff3409161b03e16e919436bc3f3a7179cf10e'),
+                'Ornith-1.5-397B-IQ2_M-00002-of-00004.gguf': (39950005408,
+                                                              'e8e2545a86e0465e4d4d9808952e50061e03f88a91545f9ba8ede520ff43edbe'),
+                'Ornith-1.5-397B-IQ2_M-00003-of-00004.gguf': (39561407392,
+                                                              'e71a839028e2f24e3550dc09a6870e99db15f5f53c94d27f2e6479530094bc18'),
+                'Ornith-1.5-397B-IQ2_M-00004-of-00004.gguf': (14289926816,
+                                                              '32781e4625447e99f9f64953faa0432346dfc38d71ae3d00be9c06046d9439f4'),
+                'mmproj-Ornith-1.5-397B-f16.gguf': (918165856,
+                                                    '849e79f622755d83515437820a704e72759aa0f259d3194acf2c8f279c9c4696')}},
     "gemma4": {"title": "Gemma 4 26B-A4B", "by": "Google; quantized by Unsloth",
                "about": "on the strata-poly engine too; a 13 GB file, ~18 GB of RAM beside an 8 GB card; a smaller and a "
                         "larger size too",
@@ -1582,9 +1697,11 @@ def _urlopen(req, timeout=None):
     """Every network request of this file goes through here: starting and serving never reach the network
     (strata_control/acquisition.py), only an explicit setup, update or install does."""
     acquisition.require("a download")
+    url = req.full_url if hasattr(req, "full_url") else str(req)
+    if hf_auth.urlopen is not _ORIG_HF_URLOPEN or (os.environ.get("HF_TOKEN") and hf_auth.trusted(url)):
+        return hf_auth.urlopen(req, timeout=60 if timeout is None else timeout)
     try:
         from strata_control import transfer as _tr
-        url = req.full_url if hasattr(req, "full_url") else str(req)
         auth = _tr.hf_auth_headers(url)
         if auth and isinstance(req, urllib.request.Request) and not req.has_header("Authorization"):
             req.add_unredirected_header("Authorization", auth["Authorization"])
@@ -1594,9 +1711,17 @@ def _urlopen(req, timeout=None):
         # strata_control/netpolicy.py: `timeout` bounds the connection phase (lookup, connect, TLS, the answer's headers); a read after
         # the answer that gets no byte for netpolicy.STALL_S ends the connection
         return netpolicy.urlopen(req, timeout=timeout)
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403) and hf_auth.trusted(e.url):
+            e.close()
+            raise hf_auth.HFAuthError(
+                "Hugging Face denied access (HTTP %s). Check --hf-token or HF_TOKEN, token read permissions, "
+                "and access to the repository (including any gated-model agreement)." % e.code
+            ) from None
+        raise
     except urllib.error.URLError as e:
         if tls.is_certificate_error(e):               # not the raw urlopen text, and never a way to skip the check
-            raise tls.CertificateProblem(tls.host_of(req.full_url if hasattr(req, "full_url") else str(req))) from None
+            raise tls.CertificateProblem(tls.host_of(url)) from None
         raise
 
 
@@ -3986,6 +4111,8 @@ def download_single(url: str, part: Path, total: int, label: str):
             print()
             if not total or have >= total:
                 break
+        except hf_auth.HFAuthError as e:
+            fail(str(e))
         except (OSError, http.client.HTTPException) as e:
             print()
             if part.exists() and total and part.stat().st_size > total:
@@ -4056,6 +4183,8 @@ def download(url, dst: Path, what=None):
             with _open_net(req) as r:
                 total = int(r.headers.get("Content-Length", 0) or 0)
             break
+        except hf_auth.HFAuthError as e:
+            fail(str(e))
         except urllib.error.HTTPError as e:
             if e.code == 404 and hf_unpinned(url) != url:  # the pinned revision is gone from the repository
                 if not allow_unpinned():
@@ -6135,6 +6264,34 @@ def rocm_clang(root: Path) -> Path:
         if (d / "clang++").exists():
             return d / "clang++"
     return root / "llvm" / "bin" / "clang++"
+
+
+def rocm_windows(required=True):
+    """An installed Windows HIP SDK (or an initialized TheRock SDK), with its compiler and runtime paths."""
+    explicit = os.environ.get("HIP_PATH") or os.environ.get("ROCM_PATH")
+    roots = [Path(explicit)] if explicit else []
+    if not explicit:
+        base = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "AMD" / "ROCm"
+        roots += sorted(base.glob("*"), key=lambda p: tuple(int(n) for n in re.findall(r"\d+", p.name)), reverse=True)
+        for sdk in (Path(sys.executable).parent / "rocm-sdk.exe", ROOT / ".rocm-win/Scripts/rocm-sdk.exe"):
+            if sdk.is_file():
+                found = out([str(sdk), "path", "--root"]).strip()
+                if found:
+                    roots.append(Path(found))
+    for root in roots:
+        compiler = next((p for p in (root / "bin/clang++.exe", root / "lib/llvm/bin/clang++.exe",
+                                    root / "llvm/bin/clang++.exe") if p.is_file()), None)
+        if compiler and (compiler.parent / "clang.exe").is_file() and \
+                (root / "lib/cmake/hip/hip-config.cmake").is_file() and \
+                (root / "lib/cmake/hipblas/hipblas-config.cmake").is_file() and \
+                list((root / "bin").glob("amdhip64*.dll")):
+            ok(f"ROCm: {root}")
+            return root, compiler, [str(root / "bin")]
+    if not required:
+        return None
+    fail("a Windows HIP SDK with Clang, HIP and hipBLAS is needed to compile strata-poly",
+         "install the AMD HIP SDK, or set HIP_PATH to its root (for example C:\\Program Files\\AMD\\ROCm\\7.2); "
+         "an initialized TheRock SDK from tools/hip/build_windows.bat also works")
 
 
 def rocm_root(archs):
@@ -10161,10 +10318,8 @@ def poly_verdict(d, ram, vram_gb, hip, windows=False) -> str:
     if vram_gb < poly_beside_gb(d) + 2:
         return f"does not fit: it takes about {poly_beside_gb(d)} GB of VRAM before any expert"
     need = poly_ram_need(d, vram_gb)
-    # an AMD card on Windows: setup compiles the HIP engine there (AMD's ROCm wheels); one RX 9070 XT has run one
-    head = ("EXPERIMENTAL, measured on one AMD card on Windows, " if hip and WIN else
-            "EXPERIMENTAL, " + ("not tried on Windows, " if WIN and not windows else ""))
-    return head + (
+    return "EXPERIMENTAL, " + ("AMD engine compiled locally, " if hip and WIN else "") + \
+        ("not tried on Windows, " if WIN and not windows else "") + (
         f"fits by setup's estimate (~{need:.0f} GB of RAM on this card)" if poly_fits(d, ram, vram_gb, hip) else
         f"wants ~{need:.0f} GB of RAM on this card: with {ram:.0f} its experts are read from the SSD")
 
@@ -10374,10 +10529,11 @@ def build_engine_poly(gpu, yes, llama, vision="none", toolkit=13, portable=False
 
 def build_engine_poly_hip(gpu, llama, portable=False) -> Path:
     """Compile strata-poly for this AMD GPU into engine-poly/ (again only when its source changed: a `git pull`).
-    Windows: AMD's TheRock Windows wheels in .rocm-win (build_engine_poly_hip_win; portable: see that function).
+    Windows: an installed HIP SDK, else AMD's TheRock Windows wheels in .rocm-win (build_engine_poly_hip_win; portable: see that function).
     Linux: ROCm from rocm_root: a system ROCm 7 or AMD's TheRock wheels in .venv, as for the main engine's HIP
     build.  There is no ready-made AMD engine and no HIP image encoder: images stay off."""
-    if WIN:
+    sdk = rocm_windows(required=False) if WIN else None
+    if WIN and sdk is None:
         return build_engine_poly_hip_win(gpu, llama, portable)
     eng = ROOT / ENGINE_POLY_DIR
     eng.mkdir(exist_ok=True)
@@ -10387,35 +10543,61 @@ def build_engine_poly_hip(gpu, llama, portable=False) -> Path:
     archs = sorted(set(gpu.get("archs") or [gpu["arch"]]))
     engine_ok = meta.get("backend") == "hip" and (eng / POLY_EXE).exists() and meta.get("src") == src and \
         set(archs) <= set(meta.get("archs", [])) and bool(meta.get("portable")) == bool(portable)
+    if WIN:
+        engine_ok = engine_ok and meta.get("windows_hip_build") == 1 and (eng / "strata-device.exe").is_file()
     if engine_ok:
+        if WIN:
+            hip_runtime_beside_exe(eng)
         ok("strata-poly already built for this PC")
         return eng
-    if not (shutil.which("c++") or shutil.which("g++")) or not shutil.which("git"):
+    if not WIN and (not (shutil.which("c++") or shutil.which("g++")) or not shutil.which("git")):
         fail("a C++ compiler and git are needed to compile the AMD strata-poly",
              "Ubuntu/Debian: sudo apt install build-essential git   Fedora: sudo dnf install gcc-c++ git")
-    root, dirs = rocm_root(archs)
+    vcvars = None
+    if WIN:
+        vcvars = find_vcvars()
+        if vcvars is None:
+            fail("the Visual Studio C++ build tools are needed to compile the AMD strata-poly",
+                 "install Visual Studio 2022 Build Tools with 'Desktop development with C++' and run setup again")
+        root, compiler, dirs = sdk
+    else:
+        root, dirs = rocm_root(archs)
+        compiler = rocm_clang(root)
     libs = [str(Path(d).parent) for d in dirs[1:]]
     bitcode = next((p for p in (root / "lib" / "llvm" / "amdgcn" / "bitcode", root / "amdgcn" / "bitcode") if p.is_dir()),
                    root / "amdgcn" / "bitcode")
     os.environ.update({"HIP_PLATFORM": "amd", "HIP_COMPILER": "clang", "HIP_RUNTIME": "rocclr", "ROCM_PATH": str(root),
                        "HIP_PATH": str(root)})
-    os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(dirs + [os.environ.get("LD_LIBRARY_PATH", "")]).rstrip(os.pathsep)
-    os.environ["PATH"] = os.pathsep.join([str(root / "bin"), str(rocm_clang(root).parent), os.environ.get("PATH", "")])
+    if not WIN:
+        os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(dirs + [os.environ.get("LD_LIBRARY_PATH", "")]).rstrip(os.pathsep)
+    os.environ["PATH"] = os.pathsep.join([str(root / "bin"), str(compiler.parent),
+                                         os.environ.get("PATH", "")])
     say("  strata-poly's source changed: compiling it again (only what changed, a few minutes) ..."
         if meta.get("backend") == "hip" and (eng / POLY_EXE).exists()
         else f"  Compiling the strata-poly engine for your AMD GPU ({', '.join(archs)}; some minutes, once) ...")
-    cmake_build(engine_src(), ROOT / "build-poly-hip", "strata-poly",
+    # The SDK finds its own bitcode on Windows; embedded quotes in CMAKE_HIP_FLAGS break cmd.exe's quoting of
+    # paths such as Program Files. C, C++ and HIP must all use Clang (CMake cannot mix cl.exe and Clang HIP).
+    host = [f"-DCMAKE_C_COMPILER={(compiler.parent / 'clang.exe').as_posix()}",
+            f"-DCMAKE_CXX_COMPILER={compiler.as_posix()}"] if WIN else \
+           [f"-DCMAKE_HIP_FLAGS=-isystem {root}/include --rocm-path={root} --rocm-device-lib-path={bitcode}"]
+    cmake_build(engine_src(), ROOT / "build-poly-hip", ["strata-poly", "strata-device"] if WIN else "strata-poly",
                 ["-DSTRATA_ENABLE_HIP=ON", "-DSTRATA_ENABLE_CUDA=OFF", "-DSTRATA_BUILD_TESTS=OFF",
                  f"-DSTRATA_PORTABLE={'ON' if portable else 'OFF'}",
                  "-DCMAKE_HIP_ARCHITECTURES=" + ";".join(archs),
-                 f"-DCMAKE_HIP_COMPILER={rocm_clang(root)}", f"-DCMAKE_HIP_COMPILER_ROCM_ROOT={root}",
-                 "-DCMAKE_PREFIX_PATH=" + ";".join([str(root), *libs]),
-                 f"-DCMAKE_HIP_FLAGS=-isystem {root}/include --rocm-path={root} --rocm-device-lib-path={bitcode}",
-                 *ggml_defs(llama)], None, "")
+                 f"-DCMAKE_HIP_COMPILER={compiler.as_posix() if WIN else compiler}",
+                 f"-DCMAKE_HIP_COMPILER_ROCM_ROOT={root.as_posix() if WIN else root}",
+                 "-DCMAKE_PREFIX_PATH=" + ";".join([root.as_posix() if WIN else str(root), *libs]),
+                 *host, *ggml_defs(llama)], vcvars, "build-poly-hip.bat" if WIN else "")
     shutil.copy2(ROOT / "build-poly-hip" / POLY_EXE, eng / POLY_EXE)
+    if WIN:
+        shutil.copy2(ROOT / "build-poly-hip/strata-device.exe", eng / "strata-device.exe")
     stamp.write_text(json.dumps({"source": "local-hip", "backend": "hip", "version": source_version(),
                                  "archs": archs, "vision": "none", "lib_dirs": dirs, "src": src,
-                                 **({"portable": True} if portable else {})}, indent=1))
+                                 **({"portable": True} if portable else {}),
+                                 **({"windows_hip_build": 1, "compiler": str(compiler), "rocm_root": str(root)}
+                                    if WIN else {})}, indent=1))
+    if WIN:
+        hip_runtime_beside_exe(eng)
     ok(f"strata-poly compiled: {eng / POLY_EXE}")
     return eng
 
@@ -10435,8 +10617,10 @@ def build_engine_poly_hip_win(gpu, llama, portable=False) -> Path:
     src = source_hash(ENGINE_SOURCES)
     archs = sorted(set(gpu.get("archs") or [gpu["arch"]]))
     engine_ok = meta.get("backend") == "hip" and (eng / POLY_EXE).exists() and meta.get("src") == src and \
-        set(archs) <= set(meta.get("archs", [])) and bool(meta.get("portable")) == bool(portable)
+        set(archs) <= set(meta.get("archs", [])) and bool(meta.get("portable")) == bool(portable) and \
+        meta.get("windows_hip_build") == 1 and (eng / "strata-device.exe").is_file()
     if engine_ok:
+        hip_runtime_beside_exe(eng)
         ok("strata-poly already built for this PC")
         return eng
     vcvars = find_vcvars()
@@ -10453,7 +10637,7 @@ def build_engine_poly_hip_win(gpu, llama, portable=False) -> Path:
         if meta.get("backend") == "hip" and (eng / POLY_EXE).exists()
         else f"  Compiling the strata-poly engine for your AMD GPU ({', '.join(archs)}; 10-20 minutes, once) ...")
     bdir = ROOT / "build-poly-hip-win"
-    cmake_build(engine_src(), bdir, "strata-poly",
+    cmake_build(engine_src(), bdir, ["strata-poly", "strata-device"],
                 ["-DSTRATA_ENABLE_HIP=ON", "-DSTRATA_ENABLE_CUDA=OFF", "-DSTRATA_BUILD_TESTS=OFF",
                  "-DSTRATA_PREFILL_MMQ=ON", f"-DSTRATA_PORTABLE={'ON' if portable else 'OFF'}",
                  "-DCMAKE_HIP_ARCHITECTURES=" + ";".join(archs),
@@ -10464,6 +10648,7 @@ def build_engine_poly_hip_win(gpu, llama, portable=False) -> Path:
                  f"-DCMAKE_HIP_FLAGS=--rocm-path={rocm} --rocm-device-lib-path={bitcode}",
                  *ggml_defs(llama)], vcvars, "build-strata-poly-hip.bat")
     shutil.copy2(bdir / POLY_EXE, eng / POLY_EXE)
+    shutil.copy2(bdir / "strata-device.exe", eng / "strata-device.exe")
     # the DLLs, the GEMM kernels and the .kpack files rocBLAS finds beside its DLL come from the ready-made main
     # engine's bundled ROCm (the same wheels; lib_dirs points there, so nothing is on the disk twice), else from
     # .rocm-win itself (rocm/bin, where its own kernels are)
@@ -10472,7 +10657,7 @@ def build_engine_poly_hip_win(gpu, llama, portable=False) -> Path:
     stamp.write_text(json.dumps({"source": "local-hip", "backend": "hip", "platform": "windows-x64",
                                  "version": source_version(), "archs": archs, "rocm": ROCM_WIN_VERSION,
                                  "hipblaslt_version": hipblaslt_version([str(root / "bin")]), "vision": "none",
-                                 "lib_dirs": dirs, "src": src,
+                                 "lib_dirs": dirs, "src": src, "windows_hip_build": 1,
                                  **({"portable": True} if portable else {})}, indent=1))
     hip_runtime_beside_exe(eng)                        # #468 #461: before System32's amdhip64_7.dll
     ok(f"strata-poly compiled: {eng / POLY_EXE}")
@@ -10496,14 +10681,28 @@ def update_poly_engine(cfg: dict, yes=False, cfg_path: Path | None = None) -> No
     try:
         meta = json.loads(stamp.read_text()) if stamp.exists() else {}
         if meta.get("backend") == "hip":   # the AMD engine compiled here: the same way again when the source moved
-            if not (meta.get("src") == source_hash(ENGINE_SOURCES) and (eng / POLY_EXE).exists()):
+            before = json.dumps(cfg, sort_keys=True)
+            if not (meta.get("src") == source_hash(ENGINE_SOURCES) and (eng / POLY_EXE).exists()) or \
+                    (WIN and (meta.get("windows_hip_build") != 1 or not (eng / "strata-device.exe").is_file())):
                 build_engine_poly_hip({"arch": (meta.get("archs") or [""])[0], "archs": meta.get("archs")},
                                       get_llama_cpp(), bool(meta.get("portable")))
-                cfg["lib_dirs"] = engine_lib_dirs(eng)
+            cfg["backend"] = "hip"
+            cfg["lib_dirs"] = engine_lib_dirs(eng)
+            if WIN:
+                hip_runtime_beside_exe(eng)
+                if cfg.get("hip_ordinal") is None:
+                    cards = amd_gpus_win()
+                    card = next((g for g in cards if g["index"] == cfg.get("gpu") and
+                                 g["arch"] in meta.get("archs", [])), None)
+                    candidates = [g for g in cards if g["arch"] in meta.get("archs", [])]
+                    card = card or (candidates[0] if len(candidates) == 1 else None)
+                    if card is None:
+                        raise RuntimeError("cannot identify the AMD card for this config; run setup with --gpu")
+                    cfg["hip_ordinal"] = hip_card(eng, card, cards)["index"]
             if renamed:
                 cfg["exe"] = str(eng / POLY_EXE)
-                if cfg_path is not None:
-                    write_config(cfg_path, cfg)
+            if cfg_path is not None and json.dumps(cfg, sort_keys=True) != before:
+                write_config(cfg_path, cfg)
             return
         picks = cfg["gpu"] if isinstance(cfg.get("gpu"), list) else [cfg["gpu"] if isinstance(cfg.get("gpu"), int) else None]
         gpu = gpu_info(picks[0])
@@ -10579,15 +10778,17 @@ def poly_setup(a, family, gpu, hip, cuda_tk, multi, ram, data, elsewhere, port, 
     fam = FAMILIES[family]
     title = fam["title"]
     if hip and WIN:   # the engine is compiled here from AMD's ROCm Windows wheels (rocm_win_root)
-        warn(f"{title} on AMD cards on Windows: EXPERIMENTAL.  Setup compiles the HIP engine here (AMD's ROCm "
+        warn(f"{title} on AMD cards on Windows: EXPERIMENTAL.  Setup compiles the HIP engine here (an installed HIP SDK or AMD's ROCm "
              "wheels), which has run Tiel Coder on an RX 9070 XT and Qwen3.6, Ornith, Tiel Coder and Gemma 4 on an "
-             "RX 5700 XT, and nothing else yet; the log says where it stops if it does")
+             "RX 5700 XT. Ornith 397B IQ1_S has also run on an RX 9070 XT; the log says where it stops if it does")
     elif hip and family in ("glm", "deepseek", "flint", "kolibri", "clover"):   # the engine runs on AMD, these not yet
         warn(f"{title} on the AMD card has not been tried: the engine runs there, this model was not")
     if cuda_tk == 12:
         warn(f"{title}'s engine with CUDA 12 is compiled here (the ready-made one is CUDA 13)" +
              (": on Pascal / Volta it is untested" if int(gpu["arch"]) < CUDA13_MIN_ARCH else ""))
-    if WIN and not fam.get("windows"):
+    if fam.get("memory_estimate"):
+        warn(f"{title}: memory figures are conservative estimates; see docs/BACKENDS.md for tested configurations")
+    if WIN and not fam.get("windows") and not fam.get("memory_estimate"):
         confirm_risk(f"{title} has been run on Linux only: its engine compiles on Windows, the model was not tried "
                      "there", bool(a.family), a.yes, f"{title} has not been tried on Windows",
                      f"use Linux, or --family {family} --yes to try it here")
@@ -10657,7 +10858,8 @@ def poly_setup(a, family, gpu, hip, cuda_tk, multi, ram, data, elsewhere, port, 
         "(the OS file cache).")
     if room < beside + 2:
         enc = vision == "gpu"                          # the encoder's share may be what does not fit
-        basis = d.get("memory_basis", "measured on a 32 GB card at a 32K context")
+        basis = "conservative estimate at 32K context" if fam.get("memory_estimate") else \
+            d.get("memory_basis", "measured on a 32 GB card at a 32K context")
         confirm_risk(f"{title} takes about {beside} GB of VRAM before any expert ({basis})" +
                      (f" and its image encoder {fam['vision_vram_gb']} GB" if enc else "") +
                      f"; {gpu_name(gpu)} has less than it takes to start", bool(a.model), a.yes,
@@ -10667,7 +10869,7 @@ def poly_setup(a, family, gpu, hip, cuda_tk, multi, ram, data, elsewhere, port, 
         warn(f"going on with {vram:.0f} GB of VRAM, as you chose")
     elif vram < 30:
         ran = fam.get("ran_on_gb", 32)                 # a card of 8 GB reports 8,188 MiB
-        warn((f"{title} has run on no card under {ran} GB. " if round(vram) < ran else "") +
+        warn((f"{title} has run on no card under {ran} GB. " if round(vram) < ran and not fam.get("memory_estimate") else "") +
              f"On {vram:.0f} GB about {100 * held / d['arena_gb']:.0f}% of {title}'s experts fit in VRAM "
              f"({100 * poly_held_gb(d, 31.84) / d['arena_gb']:.0f}% on a 32 GB card): more of every answer is "
              "computed on the CPU, so it is slower")
@@ -10799,6 +11001,8 @@ def poly_setup(a, family, gpu, hip, cuda_tk, multi, ram, data, elsewhere, port, 
     eng = build_engine_poly_hip(gpu, llama, portable) if hip else \
         build_engine_poly(gpu, a.yes, llama, vision, cuda_tk, portable)
     lib_dirs = engine_lib_dirs(eng)
+    if hip and WIN:
+        gpu = hip_card(eng, gpu, amd_gpus_win())
     ok(f"engine: {eng / POLY_EXE}")
 
     step(5, f"downloading {title} {model}")
@@ -12713,10 +12917,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--family", choices=list(FAMILIES) + list(PREVIEW_FAMILIES) + list(HY4_FAMILIES),
                     help="qwen = Qwen3.8-Flash-Next, swift = Swift 1.5, glm = GLM 5.3 Flash (docs/GLM.md), deepseek = "
-                         "DeepSeek V4 Flash, lfm25 = LFM2.5-24B-A2B, flint = Flint 40B-A2.5B, qwen36 = "
+                         "DeepSeek V4 Flash, lfm25 = LFM2.5-24B-A2B, flint = Flint 40B-A2.5B, kolibri = Kolibri 1, qwen36 = "
                          "Qwen3.6-35B-A3B on strata-poly, groot = Groot 19B-A3B (experimental; docs/models/groot.md), "
                          "clover = Clover-35B-A3B-Preview, ornith = "
-                         "Ornith 1.5, gemma4 = Gemma 4 26B-A4B, tiel = Tiel Coder 35B-A3B, minicpmv = MiniCPM-V 4.7 "
+                         "Ornith 1.5 35B, ornith397 = Ornith 1.5 397B, gemma4 = Gemma 4 26B-A4B, tiel = Tiel Coder 35B-A3B, minicpmv = MiniCPM-V 4.7 "
                          "35B-A3B, ornith122 = Ornith 1.5 122B (docs/BACKENDS.md), inkling = Inkling 2 Mini (experimental, text "
                          "only; docs/models/inkling.md), qwen36-strata = Qwen3.6-35B-A3B on the Strata project's "
                          "own engine (UD-Q4_K_XL and up, 32 GB of RAM or more; pictures with --vision, several "
@@ -12896,7 +13100,9 @@ def main() -> int:
                          "Linux or Windows (chosen by itself when the PC has no NVIDIA card PolyStrata can use), "
                          "sycl = Intel Arc, EXPERIMENTAL: Linux, built from source (docs/INTEL_ARC.md)")
     ap.add_argument("--skip-build", action="store_true", help=argparse.SUPPRESS)
+    hf_auth.add_argument(ap)
     a = ap.parse_args()
+    hf_auth.configure(ap, a)
     a._custom_gguf_shards = None                      # set by --custom-gguf; None means "not using your own file"
     if a.output == "jsonl":
         jsonl_start()

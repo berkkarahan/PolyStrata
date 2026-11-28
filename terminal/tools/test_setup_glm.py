@@ -116,7 +116,8 @@ class Estimates(unittest.TestCase):
         with mock.patch.object(setup, "WIN", False):   # #11: AMD on Linux runs it
             self.assertNotIn("does not run", setup.poly_verdict(setup.MODELS[M], 256, 24.0, True))
         with mock.patch.object(setup, "WIN", True):
-            self.assertIn("AMD", setup.poly_verdict(setup.MODELS[M], 256, 24.0, True))   # only AMD on Windows is left out
+            self.assertIn("compiled locally", setup.poly_verdict(setup.MODELS[M], 256, 24.0, True))
+            self.assertTrue(setup.poly_fits(setup.MODELS[M], 256, 24.0, True))
         self.assertIn("does not fit", setup.poly_verdict(setup.MODELS[M], 256, 12.0, False))
         self.assertIn("fits by setup's estimate", setup.poly_verdict(setup.MODELS[M], 128, 31.84, False))
         self.assertIn("read from the SSD", setup.poly_verdict(setup.MODELS[M], 64, 31.84, False))
@@ -242,7 +243,7 @@ class Main(unittest.TestCase):
         self.tmp.cleanup()
 
     def main(self, argv=(), ram=128.0, vram=31.84, model=False, answers=None, win=False, n_gpus=1, family="glm",
-             cores=None):
+             cores=None, amd_cards=None):
         """answers: None = --yes; else {words of a question: its answer} (Enter for the others); the questions asked
         are kept in self.asked.  model: False, True (this file's M) or a size's name.  cores: (performance,
         efficiency) of a hybrid CPU."""
@@ -272,6 +273,13 @@ class Main(unittest.TestCase):
                                                         **({"portable": True} if portable else {})}))
             return eng
 
+        def fake_hip_build(gpu, llama, portable=False):
+            eng = fake_build(gpu, True, llama, portable=portable)
+            (eng / "BUILD.json").write_text(json.dumps({"source": "local-hip", "backend": "hip",
+                                                       "lib_dirs": ["C:/ROCm/bin"],
+                                                       **({"portable": True} if portable else {})}))
+            return eng
+
         patches = [
             mock.patch.dict(os.environ, {"STRATA_FEED_MODELS": "0"}),     # the signed feed's model list is not read
             mock.patch.object(setup, "POLY_PREBUILT_URL", ""),           # no ready-made strata-poly to ask the release for (Windows)
@@ -283,7 +291,8 @@ class Main(unittest.TestCase):
             mock.patch.object(setup, "data_folder", lambda d, *a, **k: (self.t / "data", [])),
             mock.patch.object(setup, "installed_configs", lambda: []),
             mock.patch.object(setup, "gpus", lambda: found),
-            mock.patch.object(setup, "amd_gpus", lambda *a: []),
+            mock.patch.object(setup, "amd_gpus", lambda *a: amd_cards or []),
+            mock.patch.object(setup, "amd_gpus_win", lambda: amd_cards or []),
             mock.patch.object(setup, "ram_gb", lambda: ram),
             mock.patch.object(setup, "cpu_info", lambda: ("Test CPU", True, True)),
             mock.patch.object(setup, "cpu_cores", lambda: cores),
@@ -293,6 +302,7 @@ class Main(unittest.TestCase):
             mock.patch.object(setup, "get_llama_cpp", lambda: None),       # no llama.cpp tree, as setup has it without STRATA_GGML_DIR
             mock.patch.object(setup, "get_prebuilt", mock.Mock(side_effect=AssertionError("the Qwen engine"))),
             mock.patch.object(setup, "build_engine_poly", fake_build),
+            mock.patch.object(setup, "build_engine_poly_hip", fake_hip_build),
             mock.patch.object(setup, "download", fake_download),
             mock.patch.object(setup, "whole_shard", lambda s: False),
             mock.patch.object(setup, "check_shards", lambda shards: None),

@@ -200,7 +200,8 @@ you how to connect your apps. AI tools can also install, start and stop PolyStra
 **Mac (Apple Silicon, M1 to M5, macOS 15 or newer):** install Apple's Command Line Tools once
 (`xcode-select --install` in Terminal; Xcode itself is not needed). Then open Terminal in the PolyStrata folder and run
 **`./setup.sh`**. It builds the Mac engine on your Mac (about 7 minutes), asks the same questions, downloads the model
-and starts it. Next time, `./setup.sh` starts it right away. Which size fits your Mac and how fast it is:
+and starts it. In a terminal, `./setup.sh` lists models, their quantizations and context sizes, with installed choices
+as defaults on later runs (`terminal/scripts/run-<model>.sh` starts a saved model directly). Which size fits your Mac and how fast it is:
 [docs/MAC.md](docs/MAC.md). By default it sets up Qwen3.8-Flash-Next. `./setup.sh --family qwen36` or `--family lfm25`
 sets up Qwen3.6 or LFM2.5 instead, on strata-poly's Metal engine, as a beta: on an M5 Ultra, Qwen3.6 UD-Q2_K_XL wrote
 134 tokens/s in a short chat and read a 3,768-token prompt at 2,978 tokens/s. `--family inkling` sets up Inkling 2
@@ -228,7 +229,7 @@ All fourteen are in the installer's list of models. `./setup.sh --family glm`, `
 > PolyStrata loads 35-55 GB into your RAM and locks part of it for the graphics card. This is normal. Wait, and don't
 > close the window. The window shows what PolyStrata is doing.
 
-**Next time**, run `START-HERE.bat` (or `./setup.sh`) again. It starts right away and downloads nothing twice. Close
+**Next time**, run `START-HERE.bat` again, or use `./terminal/scripts/run-<model>.sh` (or `./setup.sh --yes`) on Mac/Linux to start directly; in a terminal `./setup.sh` shows the model → quantization → context menu with your installed choices as defaults, and downloads nothing twice. Close
 its window to stop the model. `UPDATE.bat` (`./setup.sh --update`) updates PolyStrata without starting it.
 Coming from 0.1.45-poly.10 or older: setup's files moved into `terminal/` ([what to change](docs/INSTALL.md#coming-from-0145-poly10-or-older)).
 Updating, several cards, where the files go and every option: [docs/INSTALL.md](docs/INSTALL.md).

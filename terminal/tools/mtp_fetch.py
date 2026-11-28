@@ -37,8 +37,28 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from strata_control import netpolicy, tls  # noqa: E402
+if __package__:
+    from . import hf_auth
+else:
+    import hf_auth
 
 tls.install()       # #3722: the operating system's certificates
+_ORIG_HF_URLOPEN = hf_auth.urlopen
+
+
+def _open(req, timeout=120):
+    if hf_auth.urlopen is not _ORIG_HF_URLOPEN or (os.environ.get("HF_TOKEN") and hf_auth.trusted(req.full_url)):
+        return hf_auth.urlopen(req, timeout=timeout)
+    try:
+        return netpolicy.urlopen(req, timeout=timeout)
+    except urllib.error.HTTPError as error:
+        if error.code in (401, 403) and hf_auth.trusted(error.url):
+            error.close()
+            raise hf_auth.HFAuthError(
+                "Hugging Face denied access (HTTP %s). Check --hf-token or HF_TOKEN, token read permissions, "
+                "and access to the repository (including any gated-model agreement)." % error.code
+            ) from None
+        raise
 
 # #214: a fixed commit of the checkpoint (its `sha` from https://huggingface.co/api/models/Qwen/Qwen3.8-Flash-Next
 # on 2026-09-30), so every install reads the same tensors; STRATA_MTP_REVISION overrides it (e.g. main).  When the
@@ -160,7 +180,7 @@ def get(url, start=None, end=None, retries=6):
             req = urllib.request.Request(used, headers={"User-Agent": "strata-mtp-fetch"})
             if start is not None:
                 req.add_header("Range", "bytes=%d-%d" % (start, end))
-            answer = netpolicy.open_url(netpolicy.urlopen, req, say=_say_waiting,
+            answer = netpolicy.open_url(_open, req, say=_say_waiting,
                                         check_memory=not _ANY_BYTES[0])
             with answer as r:
                 if start is not None:
@@ -174,6 +194,8 @@ def get(url, start=None, end=None, retries=6):
                     _cdn[url] = (landed, time.monotonic() + CDN_TTL)
             _ANY_BYTES[0] = True
             return data
+        except hf_auth.HFAuthError:
+            raise
         except Exception as e:  # network errors are retried, then surfaced
             with _cdn_lock:
                 _cdn.pop(url, None)
@@ -351,7 +373,7 @@ def resolve_repo():
     try:
         req = urllib.request.Request(REPO + "model.safetensors.index.json", method="HEAD",
                                      headers={"User-Agent": "strata-mtp-fetch"})
-        netpolicy.open_url(netpolicy.urlopen, req, say=_say_waiting).close()
+        netpolicy.open_url(_open, req, say=_say_waiting).close()
     except urllib.error.HTTPError as e:
         if e.code == 404 and "/resolve/%s/" % REVISION in REPO:
             if (os.environ.get("STRATA_ALLOW_UNPINNED") or "").strip() != "1":
@@ -542,4 +564,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except hf_auth.HFAuthError as error:
+        sys.exit(str(error))

@@ -4,6 +4,9 @@ Everything about installing, starting, updating and configuring PolyStrata, on W
 AMD graphics card. The short version is in the [README](../README.md#install); an AI coding assistant can do all of
 this for you with [AI_SETUP.md](AI_SETUP.md). A Mac: [MAC.md](MAC.md).
 
+Apple Silicon Macs use the same shell launcher and complete model catalog, with native Metal engines.
+Newly ported paths are experimental: see [coverage and validation](MAC.md#model-coverage).
+
 > **On this page:** [What you need](#what-you-need) · [Windows](#windows) · [Linux](#linux) ·
 > [AMD cards](#amd-cards) · [Several cards](#two-or-three-cards) · [Older CPUs](#older-cpus-experimental) ·
 > [The terminal](#the-terminal) · [Updating](#updating) · [Where things are stored](#where-things-are-stored) ·
@@ -58,8 +61,52 @@ settings. Starting PolyStrata from Task Scheduler at logon needs two task settin
 ./setup.sh
 ```
 
-The same questions, the same automatic install (it uses `sudo apt` for Python and, only if it has to compile, for
-the build tools), and the same start: `http://127.0.0.1:8080`. Later runs of `./setup.sh` (or `terminal/scripts/run-<model>.sh`, or `python terminal/polystrata.py start <name>`) start the model directly; `./setup.sh --setup` installs another model or changes the settings (`--no-scripts` skips writing per-model scripts). Other distributions, WSL and compiling: [details](DETAILS.md#linux). Nix: [SOURCE_INSTALL.md](SOURCE_INSTALL.md).
+The same automatic install (it uses `sudo apt`, `dnf` or `pacman` for Python and, only if it has to compile, for
+the build tools), and the same start: `http://127.0.0.1:8080`. In a terminal, `./setup.sh` first presents **model → quantization →
+context**. Enter a listed number or name; Enter accepts the default, and `q` cancels. Installed choices are the
+defaults on later runs. Use `terminal/scripts/run-<model>.sh` (or `python terminal/polystrata.py start <name>`, or `./setup.sh --yes`) to start a saved model directly; `./setup.sh --setup` installs another model or changes the settings (`--no-scripts` skips writing per-model scripts). Other distributions, WSL and compiling: [details](DETAILS.md#linux). Nix: [SOURCE_INSTALL.md](SOURCE_INSTALL.md).
+
+`./setup.sh --list-models` lists the platform's models, quantizations and context choices without installing them. `--hf-token TOKEN` (or `HF_TOKEN`) authenticates Hugging Face downloads for the current run without saving the token on disk.
+
+On both Linux and macOS, `setup.sh` follows `START-HERE.bat`'s launch sequence: reuse a working `terminal/.venv`, otherwise
+find 64-bit Python 3.10 or newer, install Python if needed, and create the private environment. Its shared menu
+(`terminal/tools/setup_launcher.py`) reads the existing model catalogs and passes `--family`, `--model`, and `--context`
+to `engine/metal/setup_mac.py` on macOS or `terminal/setup.py` on Linux. Mac menus include only the families and quantizations
+supported by Metal. The installer still checks hardware and handles its other settings.
+
+Explicit choices skip their corresponding questions. For example, `./setup.sh --family lfm25` asks only for
+quantization and context before handing off. Every original command-line argument is retained. `--yes`,
+`--check`, `--help`, updates, and noninteractive calls bypass the menu; `--yes` keeps the installer's defaults.
+Supplying all three choices also needs no menu input:
+
+```sh
+./setup.sh --family lfm25 --model UD-Q3_K_XL --context 2048 --yes --no-start
+```
+
+On a Mac, `strata-poly` defaults to optimized expert dispatch, balanced memory management, and Q8 KV
+for compatible Qwen35MoE models (FP16 otherwise). Explicit controls are `--metal-optimize` /
+`--no-metal-optimize`, `--metal-memory legacy|balanced`, and `--poly-kv fp16|q8_0`.
+Command-line choices override saved settings, which override defaults. Explicit Q8 KV requires `qwen36`,
+`ornith`, `tiel` or `minicpmv`. Setup reports header-derived KV estimates for those models, including
+context, draft and parallel allocations; unknown memory components are labeled rather than added to an
+exact total. See [Mac tuning options](MAC.md#smaller-model-metal-defaults) for behavior and limits.
+
+An incomplete `.venv` is recreated on the next run. Errors wait for Enter only when both input and output are
+terminals; redirected or noninteractive commands exit with the failure status immediately.
+
+Linux installs missing Python packages with `apt-get`, `dnf` or `pacman`, using sudo unless already running as
+root. Apple Silicon macOS uses a checksum-verified standalone Python in `terminal/.python` when a suitable interpreter
+is unavailable; it needs neither sudo nor Homebrew. Other distributions get instructions to install Python
+manually. A working environment is reused without running any of these installation steps.
+
+On Nix/NixOS, you can use the flake:
+
+```bash
+nix develop -c ./setup.sh
+```
+
+NixOS uses uv to create a managed Python environment. On other systems, `STRATA_UV=1 ./setup.sh` opts into the
+same path. Install uv first; ordinary Linux and macOS launches use Python's standard `venv` module.
 
 ## AMD cards
 
@@ -228,6 +275,21 @@ It tunes Qwen3.8-Flash-Next's engine: PolyStrata's own models have none of these
 card under Windows keeps the default settings. [What it measures](DETAILS.md#tuning-for-your-pc---calibrate).
 
 ## Options without questions
+
+For authenticated Hugging Face downloads, pass a read token for this run:
+
+```sh
+SETUP.bat --hf-token hf_example
+./setup.sh --hf-token hf_example
+```
+
+`--hf-token=hf_example` also works, including with `setup.py` and `metal/setup_mac.py` directly.
+Alternatively, set `HF_TOKEN` in the environment; the command-line option takes precedence.
+The token is not saved in settings or start scripts. It authenticates model, vision, tokenizer,
+and draft downloads from `https://huggingface.co`, including resumed downloads. It is not sent
+to third-party `HF_ENDPOINT` mirrors, ModelScope, or redirected CDN hosts. Gated repositories
+still require access approval for the token's account. This is separate from the server's `--api-key`.
+
 
 ```
 START-HERE.bat --setup                          install another model, or change context / images (what SETUP.bat runs)

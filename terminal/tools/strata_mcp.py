@@ -277,6 +277,28 @@ FALLBACK_FAMILIES = {
                                           "download_gb": 14.4, "ram_gb": 18, "arena_gb": 12.9},
                           "APEX-I-QUALITY": {"about": "4- to 6-bit experts (APEX)",
                                              "download_gb": 23.7, "ram_gb": 28, "arena_gb": 21.6}}},
+    "ornith397": {"title": "Ornith 1.5 397B",
+                  "about": "397B on strata-poly; six IQ1/IQ2 sizes, 81.8-133.1 GB; memory estimates; IQ1_S text tested "
+                           "on Windows AMD",
+                  "tag": "ornith397-", "engine": "poly", "vision": True, "experimental": True,
+                  "models": {"IQ2_XXS": {"about": "IQ2_XXS mixed i-quants; no MTP draft block",
+                                         "download_gb": 106.31, "ram_gb": 111, "arena_gb": 100.596,
+                                         "vram_beside_gb": 11.4},
+                             "IQ1_M": {"about": "IQ1_M mixed i-quants; no MTP draft block",
+                                       "download_gb": 91.36, "ram_gb": 96, "arena_gb": 85.732,
+                                       "vram_beside_gb": 11.3},
+                             "IQ1_S": {"about": "IQ1_S mixed i-quants; no MTP draft block",
+                                       "download_gb": 81.78, "ram_gb": 86, "arena_gb": 76.202,
+                                       "vram_beside_gb": 11.2},
+                             "IQ2_XS": {"about": "IQ2_XS mixed i-quants; no MTP draft block",
+                                        "download_gb": 118.47, "ram_gb": 123, "arena_gb": 112.676,
+                                        "vram_beside_gb": 11.4},
+                             "IQ2_S": {"about": "IQ2_S mixed i-quants; no MTP draft block",
+                                       "download_gb": 120.51, "ram_gb": 125, "arena_gb": 114.555,
+                                       "vram_beside_gb": 11.6},
+                             "IQ2_M": {"about": "IQ2_M mixed i-quants; no MTP draft block",
+                                       "download_gb": 133.13, "ram_gb": 137, "arena_gb": 127.104,
+                                       "vram_beside_gb": 11.7}}},
     "gemma4": {"title": "Gemma 4 26B-A4B", "about": "on the strata-poly engine too; a 13 GB file, ~18 GB of RAM beside an 8 GB "
                                                      "card; a smaller and a larger size too", "tag": "gemma4-",
                "engine": "poly", "vision": True, "experimental": True,
@@ -2634,9 +2656,10 @@ def tool_defs(models: dict, families: dict, contexts: list) -> list:
                         "Swift 1.5, coder = the Coder, unsloth = Unsloth's ~4-bit, glm = GLM 5.3 Flash, another "
                         "model with its own engine, deepseek = DeepSeek V4 Flash on that engine, lfm25 = LFM2.5-24B-A2B, "
                         "flint = Flint 40B-A2.5B, kolibri = Kolibri 1, qwen36 = Qwen3.6-35B-A3B, "
-                        "groot = Groot 19B-A3B (experimental; Q4_K_M text measured on an 8 GB RTX 5060), ornith = Ornith 1.5, "
+                        "groot = Groot 19B-A3B (experimental; Q4_K_M text measured on an 8 GB RTX 5060), clover = Clover-35B-A3B-Preview, "
+                        "ornith = Ornith 1.5 35B, ornith397 = Ornith 1.5 397B, ornith122 = Ornith 1.5 122B, "
                         "gemma4 = Gemma 4 26B-A4B and tiel = Tiel "
-                        "Coder 35B-A3B, 11-25 GB models on that engine), with "
+                        "Coder 35B-A3B on that engine), with "
                         "download size, RAM needed, "
                         "whether each fits this PC, which are installed, the context lengths, and the recommendation. "
                         "Read-only.",

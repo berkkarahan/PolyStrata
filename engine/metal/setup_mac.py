@@ -695,7 +695,7 @@ def _feed_models(argv, interactive: bool) -> None:
 
 def main(argv=None) -> int:
     given = argv if argv is not None else sys.argv[1:]
-    _feed_models(argv, not any(x in given for x in ("--yes", "--model", "--check", "--family")) and ("--setup" in given or not mac_configs()))   # (a plain start of an installed model reads nothing)
+    _feed_models(argv, not any(x in given for x in ("--yes", "--model", "--check", "--family", "--list-models")) and ("--setup" in given or not mac_configs()))   # (a plain start of an installed model reads nothing)
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--list-models", action="store_true",
                     help="list all model families and quantizations from the shared installer")
@@ -733,7 +733,9 @@ def main(argv=None) -> int:
                     help="let the model read images (the image encoder, built here; yes = gpu: it reads on the Mac's GPU, cpu is ~100x "
                          "slower; default: asked, yes)")
     P.add_arguments(ap)
+    S.hf_auth.add_argument(ap)
     a, rest = ap.parse_known_args(argv)
+    S.hf_auth.configure(ap, a)
     if a.list_models:
         for family, entry in model_catalog().items():
             S.say(f"{family}: {entry['title']} — {entry['metal_engine']} Metal")

@@ -8,8 +8,9 @@ others) on one NVIDIA or AMD graphics card plus system RAM, and serves an OpenAI
 Work through the steps in order. Tell the user what you are doing in plain words; they may not be technical.
 
 Setup runs from the PolyStrata folder: `START-HERE.bat` on Windows, `./setup.sh` on Linux and on a Mac. For Apple
-Silicon, `./setup.sh --list-models` lists the complete catalog; read [Mac model coverage](MAC.md#model-coverage) before
-you pick a model there, since several have not run on a Mac with their real weights.
+Silicon, `./setup.sh --list-models` lists the complete catalog and dispatches installation to `engine/metal/setup_mac.py`;
+read [Mac model coverage](MAC.md#model-coverage) before you pick a model there, since several have not run on a Mac with
+their real weights. `qwen36-strata` keeps its separate `strata-q36` executable and server configuration.
 
 ## 0. Ground rules
 
@@ -145,14 +146,16 @@ The flags (all of them: `START-HERE.bat --help`):
 your shell. Start it separately in step 6.
 
 Notes:
-- **Linux:** setup uses `sudo apt` to install Python with venv if it is missing, and on AMD may need `build-essential`
-  and `git`. You cannot type the user's password: if a `sudo` step is needed, ask the user to run it (for example
-  `sudo apt install python3-venv build-essential git`) and then rerun setup.
+- **Linux:** setup uses `sudo apt` (or dnf/pacman) to install Python with venv if it is missing, and on AMD may need
+  `build-essential` and `git`. You cannot type the user's password: if a `sudo` step is needed, ask the user to run it
+  (for example `sudo apt install python3-venv build-essential git`) and then rerun setup.
 - **AMD on Linux:** setup installs ROCm into `terminal/.venv` unless a system ROCm 7 exists, and compiles the engine for the card
   (10 to 20 minutes, once).
-- **AMD on Windows:** setup downloads the ready-made AMD engine. Only the AMD driver is needed. Before the model download
-  it runs `terminal\engine\strata-device.exe --list-devices`; if that does not list the card, the driver is the problem: tell the
-  user to update AMD Software. With `--build`, setup compiles the engine for the card instead.
+- **AMD on Windows:** for the Strata project's original engine, setup downloads the ready-made AMD engine and only the
+  AMD driver is needed. Models using `strata-poly`, including Ornith 397B, are compiled locally with an installed HIP SDK
+  or AMD's TheRock wheels, plus Visual Studio 2022 C++ Build Tools. Before the model download it runs
+  `strata-device.exe --list-devices`; if that does not list the card, the driver is the problem: tell the user to update
+  AMD Software. With `--build`, setup compiles the engine for the card instead.
 - **NVIDIA with no ready-made engine for the card:** setup offers to install build tools and compile (20 to 40 minutes);
   `--yes` accepts.
 
@@ -175,7 +178,7 @@ Windows (PowerShell):  Start-Process -FilePath ".\terminal\scripts\run-iq2_xs.ba
 Linux:                 nohup ./terminal/scripts/run-iq2_xs.sh > strata-server.out 2>&1 &
 ```
 
-You can also start any configured model directly without a script via `terminal\.venv\Scripts\python terminal\polystrata.py start <name>` (or `terminal\strata.py run <model>`), or run `START-HERE.bat` / `./setup.sh` without flags. Setup asks which model when several are installed; add `--yes` to take the first. It opens no browser (`--browser` opens the Monitor page at `http://127.0.0.1:8080` when the model is ready). Closing its window (or stopping the process) stops the model.
+You can also start any configured model directly without a script via `terminal\.venv\Scripts\python terminal\polystrata.py start <name>` (or `terminal\strata.py run <model>`), or run `START-HERE.bat` / `./setup.sh --yes` (which starts the first installed model when several are installed). In an interactive terminal, `./setup.sh` without `--yes` shows model, quantization and context menus with installed choices as defaults. It opens no browser (`--browser` opens the Monitor page at `http://127.0.0.1:8080` when the model is ready). Closing its window (or stopping the process) stops the model.
 
 ## 7. Verify
 
@@ -236,3 +239,17 @@ collect `terminal/logs/strata-<model>.log` and the setup output, and open an iss
 PolyStrata also has an MCP server, so an AI tool can check, install, start and stop PolyStrata through tool calls
 (`strata_status`, `strata_models`, `strata_install`, `strata_start`, `strata_stop`, `strata_logs`, `strata_remove`,
 `strata_benchmark`, `strata_connect_info`) instead of the shell commands above. See [MCP_SERVER.md](MCP_SERVER.md).
+
+### Ornith 1.5 397B
+
+For an explicit request for the large Ornith model, use `--family ornith397`, not `ornith` (35B).
+Available sizes are IQ1_S, IQ1_M, IQ2_XXS, IQ2_XS, IQ2_S and IQ2_M. Downloads range from 81.78 to 133.13 GB;
+these are experimental entries with conservative memory estimates, not measured hardware requirements.
+Use `--model` to choose a size and `--vision cpu` or `--vision gpu` for optional image input. See
+[the backend notes](BACKENDS.md#ornith-15-397b-experimental) for shard counts, estimates and validation status.
+
+On Windows AMD, use `--backend hip --vision no`. Setup builds `strata-poly` locally using the installed
+AMD HIP SDK and Visual Studio C++ Build Tools; `HIP_PATH` can name the SDK root. Without an SDK, setup
+uses AMD's TheRock Windows wheels. It checks the selected card
+with the built HIP runtime before downloading the model. A 16 GB RX 9070 XT with 63 GB of RAM needs SSD paging
+even for IQ1_S (about 81 GB of RAM estimated); an explicit `--model IQ1_S --yes` accepts that warning.

@@ -23,8 +23,8 @@ class FamilyOrder(unittest.TestCase):
     def test_the_menu_order_on_nvidia(self):
         fams = setup.menu_families(False) + list(setup.OWN_PATH_FAMILIES)
         self.assertEqual(fams, ["qwen", "swift", "coder", "unsloth", "gyro", "nvfp4", "glm", "deepseek", "lfm25", "inkling",
-                                "flint", "kolibri", "groot", "qwen36", "clover", "ornith", "gemma4", "tiel", "minicpmv",
-                                "ornith122", "qwen36-strata"])
+                                "flint", "kolibri", "groot", "qwen36", "clover", "ornith", "ornith397", "gemma4", "tiel",
+                                "minicpmv", "ornith122", "qwen36-strata"])
 
     def test_the_default_stays_the_first_family(self):
         self.assertEqual(setup.menu_families(False)[0], "qwen")
@@ -34,7 +34,8 @@ class FamilyOrder(unittest.TestCase):
         fams = setup.menu_families(True)
         self.assertNotIn("nvfp4", fams)
         self.assertEqual(fams, ["qwen", "swift", "coder", "unsloth", "gyro", "glm", "deepseek", "lfm25", "inkling", "flint",
-                                "kolibri", "groot", "qwen36", "clover", "ornith", "gemma4", "tiel", "minicpmv", "ornith122"])
+                                "kolibri", "groot", "qwen36", "clover", "ornith", "ornith397", "gemma4", "tiel", "minicpmv",
+                                "ornith122"])
         self.assertIn("nvfp4", setup.FAMILIES)             # --family nvfp4 still exists, and says why not
 
     def test_the_unsloth_line_names_the_alternative_on_amd_and_intel(self):
